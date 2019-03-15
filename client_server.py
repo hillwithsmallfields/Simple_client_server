@@ -60,6 +60,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
     def handle(self):
         self.data = self.rfile.readline().strip()
         # todo: I want to call self.service.get_result, but what is passed when MyTCPHandler is specified is the class object, not an instance, so the service can't be passed in for creating it
+        # todo: probably put it in thread local storage https://www.bogotobogo.com/python/Multithread/python_multithreading_Thread_Local_Specific_Data.php and get it via threading.current_thread()
         self.wfile.write(bytes(get_result(self.data.decode('utf-8')),
                                'utf-8'))
 
