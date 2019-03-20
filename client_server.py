@@ -34,7 +34,8 @@ class simple_data_server():
         self.port = port
         self.files_readers = files
         # todo: put the timestamps into a separate dictionary
-        self.files_data = {filename: (0, None) for filename in files.keys()}
+        self.files_timestamps = {filename: 0 for filename in files.keys()}
+        self.files_data = {filename: None for filename in files.keys()}
         self.udp_server=service_thread(
             args=[socketserver.UDPServer((self.host, self.port),
                                          MyUDPHandler)],
@@ -51,9 +52,9 @@ class simple_data_server():
         self.tcp_server.start()
 
     def check_data_current(self):
-        for filename, timestamped_data in self.files_data.items():
-            timestamp = os.path.getctime(filename)
-            if timestamp > timestamped_data[0]:
+        for filename, timestamp in self.files_timestamps.items():
+            now_timestamp = os.path.getctime(filename)
+            if now_timestamp > timestamp:
                 reader = self.files_readers.get(filename, None)
                 if isinstance(reader, str):
                     key = reader
@@ -61,9 +62,8 @@ class simple_data_server():
                 elif isinstance(reader, int):
                     key = reader
                     reader = read_csv_as_lists
-                self.files_data[filename] = (
-                    timestamp,
-                    reader(filename, key))
+                self.files_data[filename] = reader(filename, key)
+                self.files_timestamps[filename] = now_timestamp
 
 main_filename = "/var/local/demo/demo-main.csv"
 
