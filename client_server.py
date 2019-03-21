@@ -70,8 +70,6 @@ class simple_data_server():
                 self.files_data[filename] = reader(filename, key)
                 self.files_timestamps[filename] = now_timestamp
 
-main_filename = "/var/local/demo/demo-main.csv"
-
 class service_thread(threading.Thread):
     """A wrapper for threads, that passes in a service function."""
 
@@ -130,10 +128,6 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 
 def run_server(server):
     server.serve_forever()
-
-def sample_getter(in_string, files_data):
-    print("sample_getter with args", in_string, files_data)
-    return ";".join(in_string.split())
 
 def run_servers(host, port, getter, files):
     my_server = simple_data_server(
@@ -200,6 +194,12 @@ csv.reader.
 
         print("Sent:     {}".format(text))
         print("Received: {}".format(received))
+
+main_filename = "/var/local/demo/demo-main.csv"
+
+def sample_getter(in_string, files_data):
+    print("sample_getter with args", in_string, files_data)
+    return ";".join(in_string.split())
 
 def main():
     client_server_main(sample_getter,
