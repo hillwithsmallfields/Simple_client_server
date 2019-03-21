@@ -62,6 +62,11 @@ class simple_data_server():
                 elif isinstance(reader, int):
                     key = reader
                     reader = read_csv_as_lists
+                elif type(reader) == tuple:
+                    key = reader[1]
+                    reader = reader[0]
+                else:
+                    key = None
                 self.files_data[filename] = reader(filename, key)
                 self.files_timestamps[filename] = now_timestamp
 
