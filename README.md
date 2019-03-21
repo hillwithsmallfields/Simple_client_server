@@ -1,12 +1,17 @@
 A server for applying a user-supplied function to data from clients
 ===================================================================
 
-This package makes it easy to write simple clients and servers for
+This code makes it easy to write simple clients and servers for
 retrieving information from server-side files, with further assistance
 if those files are CSV formatted.  It defines a client and server pair
 with a given port number, allowing use of both TCP and UDP, and reads
 the data files for you, re-reading them if they have been modified
 since the previous query.
+
+For now, it has no provision for writing modified data back to the
+files, and it has no authentication (I suspect that adding that will
+require adding an HTTPS server), and there is no logging.  These may
+all change in the future.
 
 How to use it
 =============
@@ -56,9 +61,9 @@ The user function
 -----------------
 
 The user-supplied function is called with two arguments, a string
-containing the query, and a dictionary binding the filenames to the
-results of the readers described above.  It should return the string
-which is to be sent back to the client.
+containing the query, and a dictionary binding the basenames of the
+filenames to the results of the readers described above.  It should
+return the string which is to be sent back to the client.
 
 Example
 -------
@@ -66,3 +71,14 @@ Example
 A very simple example is provided at the end of the source file, that
 looks things up in a CSV file `/var/local/demo/demo-main.csv`, using
 the first column as a key.
+
+Development
+===========
+
+I wrote this partly as an exercise for reminding myself about socket
+programming.  I'll use it as an example for some future learning
+projects:
+
+ * Authentication
+
+ * Python's logging facilities
