@@ -35,18 +35,20 @@ filenames to descriptions of how to read the files.  Each description
 may be:
 
  * a function taking two arguments, the name of a file to read and a
-   key (the key is not used)
+   key (the key is not used); the function should return the data as
+   its result, in whatever form your query function wants
 
  * a tuple of a function and a key; the function is called with the
-   filename and the key
+   filename and the key; the function should return the data as
+   its result, in whatever form your query function wants
 
  * a string, which is passed to a function (provided by this package)
-   that uses csv.DictReader to parse the file, and constructs a
+   that uses `csv.DictReader` to parse the file, and constructs a
    dictionary binding the field of each row named by that string, to
    the row as a whole
 
  * an integer, which is passed to a function (provided by this
-   package) that uses csv.reader to parse the file, and constructs a
+   package) that uses `csv.reader` to parse the file, and constructs a
    dictionary binding the column of each row indexed by that integer,
    to the row as a whole
 
