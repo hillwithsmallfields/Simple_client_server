@@ -59,3 +59,10 @@ The user-supplied function is called with two arguments, a string
 containing the query, and a dictionary binding the filenames to the
 results of the readers described above.  It should return the string
 which is to be sent back to the client.
+
+Example
+-------
+
+A very simple example is provided at the end of the source file, that
+looks things up in a CSV file `/var/local/demo/demo-main.csv`, using
+the first column as a key.

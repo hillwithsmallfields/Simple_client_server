@@ -91,7 +91,6 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
     def __init__(self,
                  # service,
                  *rest):
-        print("MyTCPHandler", rest)
         super().__init__(*rest)
         self.allow_reuse_address = True
         # self.service = service
@@ -100,9 +99,9 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
         my_thread = threading.current_thread()
         my_thread.server.check_data_current()
         my_server = my_thread.server
-        self.wfile.write(bytes(my_thread.get_result(
+        self.wfile.write(bytes(str(my_thread.get_result(
             self.rfile.readline().strip().decode('utf-8'),
-            my_server.files_data),
+            my_server.files_data)),
                                'utf-8'))
 
 class MyUDPHandler(socketserver.BaseRequestHandler):
@@ -110,7 +109,6 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
     def __init__(self,
                  # service,
                  *rest):
-        print("MyUDPHandler", rest)
         super().__init__(*rest)
         self.allow_reuse_address = True
         # self.service = service
@@ -120,9 +118,9 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
         my_thread = threading.current_thread()
         my_server = my_thread.server
         my_server.check_data_current()
-        reply_socket.sendto(bytes(my_thread.get_result(
+        reply_socket.sendto(bytes(str(my_thread.get_result(
             self.request[0].strip().decode('utf-8'),
-            my_server.files_data),
+            my_server.files_data)),
                             'utf-8'),
                       self.client_address)
 
@@ -195,15 +193,16 @@ csv.reader.
         print("Sent:     {}".format(text))
         print("Received: {}".format(received))
 
-main_filename = "/var/local/demo/demo-main.csv"
+# Example:
+        
+demo_filename = "/var/local/demo/demo-main.csv"
 
 def sample_getter(in_string, files_data):
-    print("sample_getter with args", in_string, files_data)
-    return ";".join(in_string.split())
+    return files_data[demo_filename].get(in_string, "Unknown")
 
 def main():
     client_server_main(sample_getter,
-                       {main_filename: 0})
+                       {demo_filename: 0})
 
 if __name__ == "__main__":
     main()
