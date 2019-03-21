@@ -4,14 +4,13 @@
 
 import argparse
 import csv
-import datetime
 import io
 import os
 import socket
 import socketserver
 import threading
 
-def read_csv_as_dicts(filename, keyfield):
+def read_csv_as_dicts(filename, keyfield="Name"):
     data = {}
     with io.open(filename, 'r', encoding='utf-8') as instream:
         data_reader = csv.DictReader(instream)
@@ -29,13 +28,18 @@ def read_csv_as_lists(filename, keycolumn=0):
 
 class simple_data_server():
 
+    """This holds together the TCP and UDP servers, and provides a place
+to hold the files description.  The servers are represented as the
+threads that hold them, and the threads hold the query function,
+for reasons explained in the docstring of service_thread."""
+
     def __init__(self, host, port, get_result, files):
         self.host = host
         self.port = port
         self.files_readers = files
         # todo: put the timestamps into a separate dictionary
         self.files_timestamps = {filename: 0 for filename in files.keys()}
-        self.files_data = {filename: None for filename in files.keys()}
+        self.files_data = {os.path.basename(filename): None for filename in files.keys()}
         self.udp_server=service_thread(
             args=[socketserver.UDPServer((self.host, self.port),
                                          MyUDPHandler)],
@@ -67,11 +71,19 @@ class simple_data_server():
                     reader = reader[0]
                 else:
                     key = None
-                self.files_data[filename] = reader(filename, key)
+                self.files_data[os.path.basename(filename)] = reader(filename, key)
                 self.files_timestamps[filename] = now_timestamp
 
 class service_thread(threading.Thread):
-    """A wrapper for threads, that passes in a service function."""
+
+    """A wrapper for threads, that passes in a service function.
+
+The rationale for it is that the application-specific handlers passed
+to socketserver.TCPServer and socketserver.UDPServer are classes
+rather than class instances, so as the instantiation of them is done
+out of our control, we can't pass in a query function argument.
+However, in our query handler, we can find what the current thread is,
+so we use the thread as somewhere to store the function."""
 
     def __init__(self,
                  server,
@@ -128,6 +140,8 @@ def run_server(server):
     server.serve_forever()
 
 def run_servers(host, port, getter, files):
+    """Run TCP and UDP servers which apply the getter argument to the incoming
+queries, using the specified files."""
     my_server = simple_data_server(
         host, port,
         getter,
@@ -135,6 +149,7 @@ def run_servers(host, port, getter, files):
     my_server.start()
 
 def get_response(query, host, port, tcp=False):
+    """The client side.  Sends your query to the server, and returns its result."""
     if tcp:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -155,9 +170,9 @@ def client_server_main(getter, files):
 
 The argument `getter' is a function to be used by the server to
 process the data it gets from the client.  It should take two
-arguments, a string and a dictionary binding filenames to the result
-of the reader functions for those file (see below), and return the
-result string.
+arguments, a string and a dictionary binding basenames of filenames to
+the result of the reader functions for those file (see below), and
+return the result string.
 
 The argument `files' is a dictionary binding filenames to functions
 for reading them.  The reading functions may be functions of two args,
@@ -167,7 +182,7 @@ built-in reader function using csv.DictReader, or a number, in which
 case it is used as the key for a built-in reader function using
 csv.reader.
 
-    """
+See the README for a less terse description."""
     parser=argparse.ArgumentParser()
     parser.add_argument('--host', '-H', default="127.0.0.1")
     parser.add_argument('--port', '-P', default=9999)
@@ -194,14 +209,16 @@ csv.reader.
         print("Received: {}".format(received))
 
 # Example:
-        
+
 demo_filename = "/var/local/demo/demo-main.csv"
 
-def sample_getter(in_string, files_data):
-    return files_data[demo_filename].get(in_string, "Unknown")
+def demo_getter(in_string, files_data):
+    """A simple query program that uses the first column in the CSV file
+as the key, and returns the whole row."""
+    return files_data[os.path.basename(demo_filename)].get(in_string, "Unknown")
 
 def main():
-    client_server_main(sample_getter,
+    client_server_main(demo_getter,
                        {demo_filename: 0})
 
 if __name__ == "__main__":
