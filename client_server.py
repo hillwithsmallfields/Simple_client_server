@@ -2,12 +2,19 @@
 
 # See https://docs.python.org/3.2/library/socketserver.html
 
+from Crypto.PublicKey import RSA
+from Crypto import Random
 import argparse
+import base64
 import csv
+import decouple
 import io
 import os
+import re
 import socket
 import socketserver
+import stat
+import sys
 import threading
 
 def read_csv_as_dicts(filename, keyfield="Name"):
@@ -33,12 +40,20 @@ to hold the files description.  The servers are represented as the
 threads that hold them, and the threads hold the query function,
 for reasons explained in the docstring of service_thread."""
 
-    def __init__(self, host, port, get_result, files):
+    def __init__(self,
+                 host, port,
+                 get_result, files,
+                 query_keys=None, reply_key=None,
+                 shibboleth=None, shibboleth_group=None):
         self.host = host
         self.port = port
         self.files_readers = files
         self.files_timestamps = {filename: 0 for filename in files.keys()}
         self.files_data = {os.path.basename(filename): None for filename in files.keys()}
+        self.query_keys = query_keys
+        self.shibboleth = re.compile(shibboleth or "^(get|put) ")
+        self.shibboleth_group = shibboleth_group
+        self.reply_key = reply_key
         self.udp_server=service_thread(
             args=[socketserver.UDPServer((self.host, self.port),
                                          MyUDPHandler)],
@@ -95,7 +110,26 @@ so we use the thread as somewhere to store the function."""
 
     def get_result(self, data_in):
         """Return the result corresponding to the input argument."""
-        return self._get_result(data_in, self.server.files_data)
+        if self.server.query_keys:
+            decrypted = False
+            data_in = base64.decode(data_in)
+            for qk in self.server.query_keys:
+                plaintext = qk.decrypt(data_in)
+                passed = self.server.shibboleth.match(plaintext)
+                if passed:
+                    data_in = (passed[self.server.shibboleth_group]
+                               if self.server.shibboleth_group
+                               else plaintext)
+                    decrypted = True
+                    break
+            if not decrypted:
+                print("Could not decrypt incoming message")
+                return None
+        result = self._get_result(data_in, self.server.files_data)
+        if self.server.reply_key:
+            result = base64.encode(
+                self.server.reply_key.publickey.encrypt(result))
+        return result
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
@@ -140,31 +174,49 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 def run_server(server):
     server.serve_forever()
 
-def run_servers(host, port, getter, files):
+def run_servers(host, port, getter, files,
+                query_keys=None, shibboleth=None, shibboleth_group=None,
+                reply_key=None):
     """Run TCP and UDP servers which apply the getter argument to the incoming
 queries, using the specified files."""
     my_server = simple_data_server(
         host, port,
-        getter,
-        files)
+        getter, files,
+        query_keys, shibboleth, shibboleth_group,
+        reply_key)
     my_server.start()
 
-def get_response(query, host, port, tcp=False):
-    """The client side.  Sends your query to the server, and returns its result."""
+def get_response(query, host, port, tcp=False,
+                query_keys=None, reply_key=None):
+    """The client side.  Sends your query to the server, and returns its result.
+    If using encryption, the caller should compose the query such that it matches
+    the shibboleth regexp."""
+    query = query + "\n"
+    if query_keys:
+        query = base64.encode(
+            query_keys[0].publickey().encrypt(query, None)[0])
     if tcp:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            to_send = bytes(query + "\n", "utf-8")
+            to_send = bytes(query, 'utf-8')
             sock.connect((host, int(port)))
             sock.sendall(to_send)
-            received = str(sock.recv(1024), "utf-8")
+            received = str(sock.recv(1024), 'utf-8')
         finally:
             sock.close()
     else:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(bytes(query, 'utf-8'), (host, int(port)))
-        received = str(sock.recv(1024), "utf-8")
+        received = str(sock.recv(1024), 'utf-8')
+    if reply_key:
+        received = reply_key.decrypt(base64.decode(received))
     return received
+
+def read_key(filename, passphrase=None):
+    """Wrap importKey with file opening, for easy use in comprehensions."""
+    with open(filename) as reply_stream:
+        return RSA.importKey(reply_stream.read(),
+                             passphrase=passphrase)
 
 def client_server_main(getter, files):
     """Run a simple client or server.
@@ -185,26 +237,84 @@ csv.reader.
 
 See the README for a less terse description."""
     parser=argparse.ArgumentParser()
-    parser.add_argument('--host', '-H', default="127.0.0.1")
-    parser.add_argument('--port', '-P', default=9999)
-    parser.add_argument('--server', '-S', action='store_true',
+    parser.add_argument('--host', '-H',
+                        default="127.0.0.1",
+                        help="""The server to handle the query.""")
+    parser.add_argument('--port', '-P',
+                        default=9999,
+                        help="""The port on which to send the query.""")
+    parser.add_argument('--server', '-S',
+                        action='store_true',
                         help="""Run as the server.
                         Otherwise, it will run as a client.""")
-    parser.add_argument("--tcp", "-t", action='store_true',
+    parser.add_argument("--tcp", "-t",
+                        action='store_true',
                         help="""Use a TCP connection to communicate with the server.
                         Otherwise, UDP will be used.
                         Only applies when running as a client; the server does both.""")
+    parser.add_argument("--query-key", "-q",
+                        action='append',
+                        help="""The key files for decrypting the queries.
+                        These are public keys, so may be visible to all users.
+                        Because the server cannot know which user is sending
+                        an encrypted query, it must try the public query keys
+                        for all expected users.""")
+    parser.add_argument("--shibboleth", "-s",
+                        help="""A regexp to detect validly decrypted input.""")
+    parser.add_argument("--shibboleth-group", "-g",
+                        help="""Which group in the shibboleth regexp contains
+                        the actual query.  If not specified, the whole query
+                        is used.""")
+    parser.add_argument("--reply-key", "-r",
+                        default=None,
+                        help="""The key file for encrypting the replies.
+                        This is a private key, so should be kept unreadable
+                        to everyone except the server user.
+                        If this is not given, replies are sent in plaintext.""")
+    parser.add_argument("--gen-key",
+                        help="""Generate a key in the specified file, and its
+                        associated public key in that name + '.pub'.
+                        No other action is done.""")
     parser.add_argument('data', nargs='*', action='append',
                         help="""The data to send to the server.""")
     args=parser.parse_args()
+    reply_key = None
+    private_key = args.query_key[0] if args.server else args.reply_key
+    query_passphrase = decouple.config('query_passphrase')
+    reply_passphrase = decouple.config('reply_passphrase')
+    if private_key:
+        key_perms = os.stat(private_key).st_mode
+        if key_perms & (stat.S_IROTH | stat.S_IRGRP | stat.S_IWOTH | stat.S_IWGRP):
+            print("Key file", private_key, "is open to misuse.")
+            sys.exit(1)
+        reply_key = read_key(args.reply_key, reply_passphrase)
+    query_keys = ([read_key(qk, query_passphrase) for qk in args.query_key]
+                  if args.query_key and len(args.query_key) > 0
+                  else None)
     if args.server:
         run_servers(args.host, int(args.port),
                     getter=getter,
-                    files=files)
+                    files=files,
+                    query_keys = query_keys,
+                    shibboleth = args.shibboleth,
+                    shibboleth_group = (int(args.shibboleth_group)
+                                        if args.shibboleth_group
+                                        else None),
+                    reply_key = reply_key)
+    elif args.gen_key:
+        passphrase = sys.stdin.readline().strip()
+        with open(args.gen_key, 'w') as keystream:
+            with open(args.gen_key + ".pub", 'w') as pubkeystream:
+                key = RSA.generate(1024, Random.new().read)
+                keystream.write(str(key.exportKey(passphrase=passphrase), 'utf-8'))
+                pubkeystream.write(str(key.publickey().exportKey(passphrase=passphrase), 'utf-8'))
     else:
         text = " ".join(args.data[0])
 
-        received = get_response(text, args.host, args.port, args.tcp)
+        received = get_response(text,
+                                args.host, args.port, args.tcp,
+                                query_keys=query_keys,
+                                reply_key=reply_key)
 
         print("Sent:     {}".format(text))
         print("Received: {}".format(received))

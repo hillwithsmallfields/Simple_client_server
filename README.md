@@ -79,6 +79,6 @@ I wrote this partly as an exercise for reminding myself about socket
 programming.  I'll use it as an example for some future learning
 projects:
 
- * Authentication
+ * Encrytion and Authentication (being worked on in this branch)
 
  * Python's logging facilities
