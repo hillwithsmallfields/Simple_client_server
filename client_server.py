@@ -91,7 +91,7 @@ so we use the thread as somewhere to store the function."""
         super().__init__(target=run_server,
                          **rest)
         self.server = server
-        self.get_result = get_result
+        self._get_result = get_result
 
     def get_result(self, data_in):
         """Return the result corresponding to the input argument."""
