@@ -37,7 +37,6 @@ for reasons explained in the docstring of service_thread."""
         self.host = host
         self.port = port
         self.files_readers = files
-        # todo: put the timestamps into a separate dictionary
         self.files_timestamps = {filename: 0 for filename in files.keys()}
         self.files_data = {os.path.basename(filename): None for filename in files.keys()}
         self.udp_server=service_thread(
