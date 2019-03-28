@@ -110,10 +110,11 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
         my_thread = threading.current_thread()
         my_thread.server.check_data_current()
         my_server = my_thread.server
-        self.wfile.write(bytes(str(my_thread.get_result(
-            self.rfile.readline().strip().decode('utf-8'),
-            my_server.files_data)),
-                               'utf-8'))
+        self.wfile.write(
+            bytes(str(
+                my_thread.get_result(
+                    self.rfile.readline().strip().decode('utf-8'))),
+                  'utf-8'))
 
 class MyUDPHandler(socketserver.BaseRequestHandler):
 
@@ -129,11 +130,12 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
         my_thread = threading.current_thread()
         my_server = my_thread.server
         my_server.check_data_current()
-        reply_socket.sendto(bytes(str(my_thread.get_result(
-            self.request[0].strip().decode('utf-8'),
-            my_server.files_data)),
-                            'utf-8'),
-                      self.client_address)
+        reply_socket.sendto(
+            bytes(str(
+                my_thread.get_result(
+                    self.request[0].strip().decode('utf-8'))),
+                  'utf-8'),
+            self.client_address)
 
 def run_server(server):
     server.serve_forever()
