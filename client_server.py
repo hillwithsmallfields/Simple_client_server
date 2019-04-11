@@ -88,6 +88,18 @@ for reasons explained in the docstring of service_thread."""
                 self.files_data[os.path.basename(filename)] = reader(filename, key)
                 self.files_timestamps[filename] = now_timestamp
 
+def hybrid_encrypt(plaintext, asymmetric_key):
+    # todo: make this use hybrid encryption, i.e. make a up new symmetric key, encrypt that and the plaintext using asymmetric_key
+    # see https://stackoverflow.com/questions/28426102/python-crypto-rsa-public-private-key-with-large-file/28427259
+    print("encrypting using public key of", asymmetric_key, "which is", asymmetric_key.publickey())
+    return base64.b64encode(asymmetric_key.publickey().encrypt(plaintext.encode("utf-8"), 32)[0])
+
+def hybrid_decrypt(ciphertext, asymmetric_key):
+    # todo: make this use hybrid decryption, i.e. extract a symmetric from the start of the plaintext, then decrypt the rest of the plaintext using the symmetric key
+    # see https://stackoverflow.com/questions/28426102/python-crypto-rsa-public-private-key-with-large-file/28427259
+    print("decrypting using", asymmetric_key)
+    return asymmetric_key.decrypt(ciphertext).decode('utf-8')
+
 class service_thread(threading.Thread):
 
     """A wrapper for threads, that passes in a service function.
@@ -110,11 +122,15 @@ so we use the thread as somewhere to store the function."""
 
     def get_result(self, data_in):
         """Return the result corresponding to the input argument."""
-        if self.server.query_keys:
+        if self.server.shibboleth.match(data_in):
+            # the incoming data made sense as plaintext:
+            return self._get_result(data_in, self.server.files_data)
+        else:
+            # try all the keys that users might have sent things in with:
             decrypted = False
-            data_in = base64.decode(data_in)
+            data_in = base64.b64decode(data_in)
             for qk in self.server.query_keys:
-                plaintext = qk.decrypt(data_in)
+                plaintext = hybrid_decrypt(data_in, qk)
                 passed = self.server.shibboleth.match(plaintext)
                 if passed:
                     data_in = (passed[self.server.shibboleth_group]
@@ -125,11 +141,10 @@ so we use the thread as somewhere to store the function."""
             if not decrypted:
                 print("Could not decrypt incoming message")
                 return None
-        result = self._get_result(data_in, self.server.files_data)
-        if self.server.reply_key:
-            result = base64.encode(
-                self.server.reply_key.publickey.encrypt(result))
-        return result
+            return hybrid_encrypt(
+                    self._get_result(data_in,
+                                     self.server.files_data),
+                    self.server.reply_key)
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
@@ -182,8 +197,8 @@ queries, using the specified files."""
     my_server = simple_data_server(
         host, port,
         getter, files,
-        query_keys, shibboleth, shibboleth_group,
-        reply_key)
+        query_keys=query_keys, reply_key=reply_key,
+        shibboleth=shibboleth, shibboleth_group=shibboleth_group)
     my_server.start()
 
 def get_response(query, host, port, tcp=False,
@@ -193,23 +208,24 @@ def get_response(query, host, port, tcp=False,
     the shibboleth regexp."""
     query = query + "\n"
     if query_keys:
-        query = base64.encode(
-            query_keys[0].publickey().encrypt(query, None)[0])
+        query = hybrid_encrypt(query, query_keys[0])
+    else:
+        query = bytes(query, 'utf-8')
     if tcp:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            to_send = bytes(query, 'utf-8')
             sock.connect((host, int(port)))
-            sock.sendall(to_send)
+            sock.sendall(query)
             received = str(sock.recv(1024), 'utf-8')
         finally:
             sock.close()
     else:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(bytes(query, 'utf-8'), (host, int(port)))
+        sock.sendto(query, (host, int(port)))
         received = str(sock.recv(1024), 'utf-8')
     if reply_key:
-        received = reply_key.decrypt(base64.decode(received))
+        received = hybrid_decrypt(base64.b64decode(received)[:-1], # I don't know why it appends a byte
+                                  reply_key)
     return received
 
 def read_key(filename, passphrase=None):
@@ -295,12 +311,12 @@ See the README for a less terse description."""
         run_servers(args.host, int(args.port),
                     getter=getter,
                     files=files,
-                    query_keys = query_keys,
-                    shibboleth = args.shibboleth,
-                    shibboleth_group = (int(args.shibboleth_group)
-                                        if args.shibboleth_group
-                                        else None),
-                    reply_key = reply_key)
+                    query_keys=query_keys,
+                    shibboleth=args.shibboleth,
+                    shibboleth_group=(int(args.shibboleth_group)
+                                      if args.shibboleth_group
+                                      else None),
+                    reply_key=reply_key)
     elif args.gen_key:
         passphrase = sys.stdin.readline().strip()
         with open(args.gen_key, 'w') as keystream:
