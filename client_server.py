@@ -120,7 +120,7 @@ docstring of the `service_thread' class.
         self.files_data = {os.path.basename(filename): None for filename in files.keys()}
         # Encryption
         self.query_keys = query_keys
-        self.shibboleth = re.compile(shibboleth or "^(get|put) ")
+        self.shibboleth = re.compile(shibboleth or "^get ")
         self.shibboleth_group = shibboleth_group
         self.reply_key = reply_key
         # The service threads
@@ -224,7 +224,7 @@ encryption itself.)
                 plaintext = hybrid_decrypt(data_in, qk)
                 passed = self.server.shibboleth.match(plaintext)
                 if passed:
-                    data_in = (passed[self.server.shibboleth_group]
+                    data_in = (passed.group(self.server.shibboleth_group)
                                if self.server.shibboleth_group
                                else plaintext)
                     decrypted = True
