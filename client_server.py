@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
-# See https://docs.python.org/3.2/library/socketserver.html
+# See:
+# - https://docs.python.org/3.2/library/socketserver.html
+# - https://stackoverflow.com/questions/28426102/python-crypto-rsa-public-private-key-with-large-file/28427259
 
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.PublicKey import RSA
@@ -85,12 +87,16 @@ It should return the string to send back over TCP or UDP.
 
 The `query_keys' argument should be either None, or a list of
 decryption keys, in which case they will all be tried to see if they
-can make sense of the input.  Making sense of the input is defined by
-the `shibboleth' argument, which is a regexp to try on the result of
-the decryption.  When a decryption result matches the regexp, if a
-`shibboleth_group' argument is given, that is used as the match group
-to extract the data to give to the query function; if no
-`shibboleth_group' is given, the entire decryption result is used.
+can make sense of the input.
+
+Making sense of the input is defined by the `shibboleth' argument (no
+connection with shibboleth.net), which is a regexp to try on the
+result of the decryption.
+
+When a decryption result matches the regexp, if a `shibboleth_group'
+argument is given, that is used as the match group to extract the data
+to give to the query function; if no `shibboleth_group' is given, the
+entire decryption result is used.
 
 (The shibboleth arrangement is so that multiple users can use it, each
 with their own set of keys, without having to send any non-encrypted
@@ -161,7 +167,11 @@ docstring of the `service_thread' class.
                 self.files_timestamps[filename] = now_timestamp
 
 def hybrid_encrypt(plaintext, asymmetric_key):
-    # see https://stackoverflow.com/questions/28426102/python-crypto-rsa-public-private-key-with-large-file/28427259
+    """Encrypt the plaintext, using a randomly generated symmetric key.
+
+The symmetric key is encrypted with the given asymmetric_key, and that
+encrypted key is returned, with the encrypted input appended.
+    """
     symmetric_key = Random.new().read(32)
     initialization_vector = Random.new().read(AES.block_size)
     cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
@@ -173,7 +183,10 @@ def hybrid_encrypt(plaintext, asymmetric_key):
     return base64.b64encode(cipher_text)
 
 def hybrid_decrypt(ciphertext, asymmetric_key):
-    # see https://stackoverflow.com/questions/28426102/python-crypto-rsa-public-private-key-with-large-file/28427259
+    """Use the asymmetric key to decrypt a symmetric key at the start of the ciphertext.
+
+That key is then used to decrypt the rest of the ciphertext.
+    """
     asymmetrically_encrypted_symmetric_iv_and_key = ciphertext[0:128]
     symmetrically_encrypted_payload = ciphertext[128:]
     symmetric_key_and_iv = asymmetric_key.decrypt(asymmetrically_encrypted_symmetric_iv_and_key)

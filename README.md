@@ -104,12 +104,24 @@ encryption:
     get_response(query, host, port, tcp=False,
                  query_keys=None, reply_key=None)
 
-Example
--------
+Examples
+--------
 
 A very simple example is provided at the end of the source file, that
 looks things up in a CSV file `/var/local/demo/demo-main.csv`, using
 the first column as a key.
+
+The program I started writing it as a wrapper for is for looking up
+where I have stored things at home:
+https://github.com/hillwithsmallfields/qs/blob/master/inventories/storage.py
+
+Sometime I'll interface the two, and present it as another example
+here.
+
+When I get round to learning to write Android apps, the idea is to
+have a phone or tablet use this to ask my home server where something
+is, and, if I've added a writeback facility, to record where I've put
+things.
 
 Development
 ===========
