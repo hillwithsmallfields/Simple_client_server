@@ -17,7 +17,12 @@ import stat
 import sys
 import threading
 
-def read_csv_as_dicts(filename, keyfield="Name"):
+def read_csv_as_dicts(filename, keyfield='Name'):
+    """Read a CSV file, producing a dictionary for each row.
+
+The rows are held in a dictionary, with the given key (by default,
+'Name').
+    """
     data = {}
     with io.open(filename, 'r', encoding='utf-8') as instream:
         data_reader = csv.DictReader(instream)
@@ -26,6 +31,11 @@ def read_csv_as_dicts(filename, keyfield="Name"):
     return data
 
 def read_csv_as_lists(filename, keycolumn=0):
+    """Read a CSV file, producing a list for each row.
+
+The rows are held in a dictionary, taking the specified column (0 by
+default) for the keys.
+    """
     data = {}
     with io.open(filename, 'r', encoding='utf-8') as instream:
         data_reader = csv.reader(instream)
@@ -35,25 +45,78 @@ def read_csv_as_lists(filename, keycolumn=0):
 
 class simple_data_server():
 
-    """This holds together the TCP and UDP servers, and provides a place
-to hold the files description.  The servers are represented as the
-threads that hold them, and the threads hold the query function,
-for reasons explained in the docstring of service_thread."""
+    """A pair of TCP and UDP servers for accessing data from some files.
+
+The servers use the same underlying function and data, and this class
+provides a place to hold the description of the files used for the
+data.
+
+The function `client_server_main' is provided as an easy way to use
+this class.
+
+The user specifies a function for getting the result, and a
+description of the files to read to get the data.  If the files have
+changed since the previous use, they are re-read before the user
+function is called.
+
+The file description is a dictionary binding filenames to indications
+of how to read the file:
+
+  - a string, meaning to read the file as CSV and produce a dictionary
+    of row dictionaries, using the string to select the column to use
+    for the keys in the outer dictionary
+
+  - a number, meaning to read the file as CSV and produce a dictionary
+    of row lists, with the number selecting the column to use for the
+    dictionary keys
+
+  - a tuple of a function and a value to pass as the second argument of
+    the function, the first argument being the filename
+
+The query function is called with two arguments:
+
+  - the data from the TCP or UDP input
+
+  - a dictionary binding the basename of each filename to the data
+    read from that file
+
+It should return the string to send back over TCP or UDP.
+
+The `query_keys' argument should be either None, or a list of
+decryption keys, in which case they will all be tried to see if they
+can make sense of the input.  Making sense of the input is defined by
+the `shibboleth' argument, which is a regexp to try on the result of
+the decryption.  When a decryption result matches the regexp, if a
+`shibboleth_group' argument is given, that is used as the match group
+to extract the data to give to the query function; if no
+`shibboleth_group' is given, the entire decryption result is used.
+
+If a `reply_key' is given, it is used to encrypt the reply.
+
+The servers are represented as the threads that hold them, and the
+threads hold the query function, for reasons explained in the
+docstring of the `service_thread' class.
+
+    """
 
     def __init__(self,
                  host, port,
                  get_result, files,
                  query_keys=None, reply_key=None,
                  shibboleth=None, shibboleth_group=None):
+        # Network
         self.host = host
         self.port = port
+        # Data
         self.files_readers = files
         self.files_timestamps = {filename: 0 for filename in files.keys()}
         self.files_data = {os.path.basename(filename): None for filename in files.keys()}
+        # Encryption
         self.query_keys = query_keys
         self.shibboleth = re.compile(shibboleth or "^(get|put) ")
         self.shibboleth_group = shibboleth_group
         self.reply_key = reply_key
+        # The service threads
         self.udp_server=service_thread(
             args=[socketserver.UDPServer((self.host, self.port),
                                          MyUDPHandler)],
@@ -66,10 +129,12 @@ for reasons explained in the docstring of service_thread."""
             get_result=get_result)
 
     def start(self):
+        """Start the server threads."""
         self.udp_server.start()
         self.tcp_server.start()
 
     def check_data_current(self):
+        """Check for the data files changing, and re-read them if necessary."""
         for filename, timestamp in self.files_timestamps.items():
             now_timestamp = os.path.getctime(filename)
             if now_timestamp > timestamp:
@@ -105,11 +170,13 @@ class service_thread(threading.Thread):
     """A wrapper for threads, that passes in a service function.
 
 The rationale for it is that the application-specific handlers passed
-to socketserver.TCPServer and socketserver.UDPServer are classes
-rather than class instances, so as the instantiation of them is done
+to `socketserver.TCPServer' and `socketserver.UDPServer' are classes
+rather than class instances, so, as the instantiation of them is done
 out of our control, we can't pass in a query function argument.
 However, in our query handler, we can find what the current thread is,
-so we use the thread as somewhere to store the function."""
+so we use the thread (this class) as somewhere to store the function.
+
+    """
 
     def __init__(self,
                  server,
@@ -121,7 +188,13 @@ so we use the thread as somewhere to store the function."""
         self._get_result = get_result
 
     def get_result(self, data_in):
-        """Return the result corresponding to the input argument."""
+        """Return the result corresponding to the input argument.
+
+This calls the user-supplied get_result function, using encryption if
+specified.  (The user function doesn't need to handle any of the
+encryption itself.)
+
+        """
         if self.server.shibboleth.match(data_in):
             # the incoming data made sense as plaintext:
             return self._get_result(data_in, self.server.files_data)
@@ -148,6 +221,12 @@ so we use the thread as somewhere to store the function."""
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
+    """The TCP handler for the simple_data_server class.
+
+It uses the `service_thread' class to determine what to do with the
+data.
+    """
+    
     def __init__(self,
                  # service,
                  *rest):
@@ -166,6 +245,12 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                   'utf-8'))
 
 class MyUDPHandler(socketserver.BaseRequestHandler):
+
+    """The UDP handler for the simple_data_server class.
+
+It uses the `service_thread' class to determine what to do with the
+data.
+    """
 
     def __init__(self,
                  # service,
@@ -192,8 +277,12 @@ def run_server(server):
 def run_servers(host, port, getter, files,
                 query_keys=None, shibboleth=None, shibboleth_group=None,
                 reply_key=None):
-    """Run TCP and UDP servers which apply the getter argument to the incoming
-queries, using the specified files."""
+    """Run TCP and UDP servers.
+
+They apply the getter argument to the incoming queries, using the
+specified files.
+
+    """
     my_server = simple_data_server(
         host, port,
         getter, files,
@@ -203,9 +292,14 @@ queries, using the specified files."""
 
 def get_response(query, host, port, tcp=False,
                 query_keys=None, reply_key=None):
-    """The client side.  Sends your query to the server, and returns its result.
-    If using encryption, the caller should compose the query such that it matches
-    the shibboleth regexp."""
+
+    """Send your query to the server, and return its result.
+
+This is a client suitable for the simple_data_server class.
+
+If using encryption, the caller should compose the query such that it matches
+the shibboleth regexp.
+    """
     query = query + "\n"
     if query_keys:
         query = hybrid_encrypt(query, query_keys[0])
@@ -251,7 +345,10 @@ built-in reader function using csv.DictReader, or a number, in which
 case it is used as the key for a built-in reader function using
 csv.reader.
 
-See the README for a less terse description."""
+See the documentation of the simple_data_server class, or the
+accompanying README.md, for a less terse description.
+
+    """
     parser=argparse.ArgumentParser()
     parser.add_argument('--host', '-H',
                         default="127.0.0.1",

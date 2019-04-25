@@ -9,9 +9,17 @@ the data files for you, re-reading them if they have been modified
 since the previous query.
 
 For now, it has no provision for writing modified data back to the
-files, and it has no authentication (I suspect that adding that will
-require adding an HTTPS server), and there is no logging.  These may
-all change in the future.
+files, and it has encryption but only implicit authentication, and
+there is no logging.  These may all change in the future.
+
+As I couldn't find all the information I needed for writing a very
+simple client-server system all in one place, I've tried to make this
+code suitable for use as an example or as a base for your own code.
+
+However, it's years since I previously did any network programming,
+and this is my first venture into encryption and decryption, so until
+I get some feedback from people with more experience of these areas,
+it might not be very good example code.
 
 How to use it
 =============
@@ -60,10 +68,41 @@ may be:
 The user function
 -----------------
 
-The user-supplied function is called with two arguments, a string
-containing the query, and a dictionary binding the basenames of the
-filenames to the results of the readers described above.  It should
-return the string which is to be sent back to the client.
+The user-supplied function is called with two arguments:
+
+ * a string containing the query
+
+ * a dictionary binding the basenames of the filenames to the results
+   of the readers described above.  It should return the string which
+   is to be sent back to the client.
+
+Optional encryption
+-------------------
+
+For encryption, there are some further arguments you can supply to
+`run_servers`:
+
+    run_servers(host, port, getter, files,
+                query_keys=None,
+                shibboleth=None, shibboleth_group=None,
+                reply_key=None)
+
+The `query_keys` argument should be either `None`, or a list of
+decryption keys, in which case they will all be tried to see if they
+can make sense of the input.  Making sense of the input is defined by
+the `shibboleth` argument, which is a regexp to try on the result of
+the decryption.  When a decryption result matches the regexp, if a
+`shibboleth_group` argument is given, that is used as the match group
+to extract the data to give to the query function; if no
+`shibboleth_group` is given, the entire decryption result is used.
+
+If a `reply_key` is given, it is used to encrypt the reply.
+
+The `get_response` function likewise has some further arguments for
+encryption:
+
+    get_response(query, host, port, tcp=False,
+                 query_keys=None, reply_key=None)
 
 Example
 -------
@@ -78,7 +117,5 @@ Development
 I wrote this partly as an exercise for reminding myself about socket
 programming.  I'll use it as an example for some future learning
 projects:
-
- * Encrytion and Authentication (being worked on in this branch)
 
  * Python's logging facilities
