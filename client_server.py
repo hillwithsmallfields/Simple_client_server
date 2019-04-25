@@ -2,6 +2,7 @@
 
 # See https://docs.python.org/3.2/library/socketserver.html
 
+from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.PublicKey import RSA
 from Crypto import Random
 import argparse
@@ -154,16 +155,27 @@ docstring of the `service_thread' class.
                 self.files_timestamps[filename] = now_timestamp
 
 def hybrid_encrypt(plaintext, asymmetric_key):
-    # todo: make this use hybrid encryption, i.e. make a up new symmetric key, encrypt that and the plaintext using asymmetric_key
     # see https://stackoverflow.com/questions/28426102/python-crypto-rsa-public-private-key-with-large-file/28427259
-    print("encrypting using public key of", asymmetric_key, "which is", asymmetric_key.publickey())
-    return base64.b64encode(asymmetric_key.publickey().encrypt(plaintext.encode("utf-8"), 32)[0])
+    symmetric_key = Random.new().read(32)
+    initialization_vector = Random.new().read(AES.block_size)
+    cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
+    symmetrically_encrypted_payload = initialization_vector + cipher.encrypt(plaintext)
+    symmetric_key_and_iv = initialization_vector + symmetric_key
+    asymmetrically_encrypted_symmetric_iv_and_key = asymmetric_key.publickey().encrypt(
+        symmetric_key_and_iv, 32)[0]
+    cipher_text = asymmetrically_encrypted_symmetric_iv_and_key + symmetrically_encrypted_payload
+    return base64.b64encode(cipher_text)
 
 def hybrid_decrypt(ciphertext, asymmetric_key):
-    # todo: make this use hybrid decryption, i.e. extract a symmetric from the start of the plaintext, then decrypt the rest of the plaintext using the symmetric key
     # see https://stackoverflow.com/questions/28426102/python-crypto-rsa-public-private-key-with-large-file/28427259
-    print("decrypting using", asymmetric_key)
-    return asymmetric_key.decrypt(ciphertext).decode('utf-8')
+    asymmetrically_encrypted_symmetric_iv_and_key = ciphertext[0:128]
+    symmetrically_encrypted_payload = ciphertext[128:]
+    symmetric_key_and_iv = asymmetric_key.decrypt(asymmetrically_encrypted_symmetric_iv_and_key)
+    initialization_vector = symmetric_key_and_iv[0:AES.block_size]
+    symmetric_key = symmetric_key_and_iv[AES.block_size:]
+    cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
+    decrypted_data = cipher.decrypt(symmetrically_encrypted_payload)
+    return decrypted_data[16:].decode()
 
 class service_thread(threading.Thread):
 
@@ -318,7 +330,7 @@ the shibboleth regexp.
         sock.sendto(query, (host, int(port)))
         received = str(sock.recv(1024), 'utf-8')
     if reply_key:
-        received = hybrid_decrypt(base64.b64decode(received)[:-1], # I don't know why it appends a byte
+        received = hybrid_decrypt(base64.b64decode(received),
                                   reply_key)
     return received
 
