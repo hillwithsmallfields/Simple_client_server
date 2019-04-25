@@ -92,6 +92,12 @@ the decryption.  When a decryption result matches the regexp, if a
 to extract the data to give to the query function; if no
 `shibboleth_group' is given, the entire decryption result is used.
 
+(The shibboleth arrangement is so that multiple users can use it, each
+with their own set of keys, without having to send any non-encrypted
+indication of which user's key is to be used.  I don't know whether
+this is a normal way to do things; I'm just making it up as I go
+along.)
+
 If a `reply_key' is given, it is used to encrypt the reply.
 
 The servers are represented as the threads that hold them, and the
