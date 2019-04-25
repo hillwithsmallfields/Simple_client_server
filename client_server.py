@@ -346,7 +346,7 @@ def read_key(filename, passphrase=None):
         return RSA.importKey(reply_stream.read(),
                              passphrase=passphrase)
 
-def client_server_main(getter, files):
+def client_server_main(getter, files, verbose=False):
     """Run a simple client or server.
 
 The argument `getter' is a function to be used by the server to
@@ -432,6 +432,7 @@ accompanying README.md, for a less terse description.
                                       if args.shibboleth_group
                                       else None),
                     reply_key=reply_key)
+        return None
     elif args.gen_key:
         passphrase = sys.stdin.readline().strip()
         with open(args.gen_key, 'w') as keystream:
@@ -439,6 +440,7 @@ accompanying README.md, for a less terse description.
                 key = RSA.generate(1024, Random.new().read)
                 keystream.write(str(key.exportKey(passphrase=passphrase), 'utf-8'))
                 pubkeystream.write(str(key.publickey().exportKey(passphrase=passphrase), 'utf-8'))
+        return None
     else:
         text = " ".join(args.data[0])
 
@@ -447,8 +449,10 @@ accompanying README.md, for a less terse description.
                                 query_keys=query_keys,
                                 reply_key=reply_key)
 
-        print("Sent:     {}".format(text))
-        print("Received: {}".format(received))
+        if verbose:
+            print("Sent:     {}".format(text))
+            print("Received: {}".format(received))
+        return received
 
 # Example:
 
@@ -461,7 +465,8 @@ as the key, and returns the whole row."""
 
 def main():
     client_server_main(demo_getter,
-                       {demo_filename: 0})
+                       {demo_filename: 0},
+                       verbose=True)
 
 if __name__ == "__main__":
     main()
