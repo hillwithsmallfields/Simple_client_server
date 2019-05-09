@@ -77,24 +77,7 @@ The query function is called with two arguments:
 
 It should return the string to send back over TCP or UDP.
 
-The `query_keys' argument should be either None, or a list of
-decryption keys, in which case they will all be tried to see if they
-can make sense of the input.
-
-Making sense of the input is defined by the `shibboleth' argument (no
-connection with shibboleth.net), which is a regexp to try on the
-result of the decryption.
-
-When a decryption result matches the regexp, if a `shibboleth_group'
-argument is given, that is used as the match group to extract the data
-to give to the query function; if no `shibboleth_group' is given, the
-entire decryption result is used.
-
-(The shibboleth arrangement is so that multiple users can use it, each
-with their own set of keys, without having to send any non-encrypted
-indication of which user's key is to be used.  I don't know whether
-this is a normal way to do things; I'm just making it up as I go
-along.)
+If a `query_key' is given, it is used to decrypt the query.
 
 If a `reply_key' is given, it is used to encrypt the reply.
 
@@ -107,8 +90,7 @@ docstring of the `service_thread' class.
     def __init__(self,
                  host, port,
                  get_result, files,
-                 query_keys=None, reply_key=None,
-                 shibboleth=None, shibboleth_group=None):
+                 query_key=None, reply_key=None):
         # Network
         self.host = host
         self.port = port
@@ -117,9 +99,7 @@ docstring of the `service_thread' class.
         self.files_timestamps = {filename: 0 for filename in files.keys()}
         self.files_data = {os.path.basename(filename): None for filename in files.keys()}
         # Encryption
-        self.query_keys = query_keys
-        self.shibboleth = re.compile(shibboleth or "^get ")
-        self.shibboleth_group = shibboleth_group
+        self.query_key = query_key
         self.reply_key = reply_key
         # The service threads
         self.udp_server=service_thread(
@@ -172,6 +152,12 @@ encrypted key is returned, with the encrypted input appended.
     asymmetrically_encrypted_symmetric_iv_and_key = asymmetric_key.publickey().encrypt(
         symmetric_key_and_iv, 32)[0]
     cipher_text = asymmetrically_encrypted_symmetric_iv_and_key + symmetrically_encrypted_payload
+    print("hybrid_encrypt", plaintext, asymmetric_key)
+    print("enc asymmetrically_encrypted_symmetric_iv_and_key =", asymmetrically_encrypted_symmetric_iv_and_key, "of length", len(asymmetrically_encrypted_symmetric_iv_and_key))
+    print("enc symmetrically_encrypted_payload =", symmetrically_encrypted_payload, "of length", len(symmetrically_encrypted_payload))
+    print("enc symmetric_key_and_iv =", symmetric_key_and_iv, "of length", len(symmetric_key_and_iv))
+    print("enc initialization_vector =", initialization_vector, "of length", len(initialization_vector))
+    print("enc symmetric_key =", symmetric_key, "of length", len(symmetric_key))
     return base64.b64encode(cipher_text)
 
 def hybrid_decrypt(ciphertext, asymmetric_key):
@@ -179,13 +165,21 @@ def hybrid_decrypt(ciphertext, asymmetric_key):
 
 That key is then used to decrypt the rest of the ciphertext.
     """
-    asymmetrically_encrypted_symmetric_iv_and_key = ciphertext[0:128]
+    print("hybrid_decrypt", ciphertext, asymmetric_key)
+    asymmetrically_encrypted_symmetric_iv_and_key = ciphertext[:128]
+    print("dec asymmetrically_encrypted_symmetric_iv_and_key =", asymmetrically_encrypted_symmetric_iv_and_key, "of length", len(asymmetrically_encrypted_symmetric_iv_and_key)) # 128
     symmetrically_encrypted_payload = ciphertext[128:]
-    symmetric_key_and_iv = asymmetric_key.decrypt(asymmetrically_encrypted_symmetric_iv_and_key)
-    initialization_vector = symmetric_key_and_iv[0:AES.block_size]
+    print("dec symmetrically_encrypted_payload =", symmetrically_encrypted_payload, "of length", len(symmetrically_encrypted_payload)) # 76
+    symmetric_key_and_iv = asymmetric_key.decrypt(asymmetrically_encrypted_symmetric_iv_and_key)[:48]
+    print("dec symmetric_key_and_iv =", symmetric_key_and_iv, "of length", len(symmetric_key_and_iv)) # 48 on server, 128 on client
+    initialization_vector = symmetric_key_and_iv[:AES.block_size]
+    print("dec initialization_vector =", initialization_vector, "of length", len(initialization_vector)) # 16
     symmetric_key = symmetric_key_and_iv[AES.block_size:]
+    print("dec symmetric_key =", symmetric_key, "of length", len(symmetric_key)) # 112
     cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
+    print("dec cipher =", cipher)
     decrypted_data = cipher.decrypt(symmetrically_encrypted_payload)
+    print("dec decrypted_data =", decrypted_data)
     return decrypted_data[16:].decode()
 
 class service_thread(threading.Thread):
@@ -210,7 +204,9 @@ so we use the thread (this class) as somewhere to store the function.
         self.server = server
         self._get_result = get_result
 
-    def get_result(self, data_in):
+    def get_result(self, data_in,
+                   protocol_version=0, encryption_version=0,
+                   authentication_version=0, application_version=0):
         """Return the result corresponding to the input argument.
 
 This calls the user-supplied get_result function, using encryption if
@@ -218,29 +214,23 @@ specified.  (The user function doesn't need to handle any of the
 encryption itself.)
 
         """
-        if self.server.shibboleth.match(data_in):
-            # the incoming data made sense as plaintext:
+        print("get_result incoming data =", data_in)
+        if encryption_version == 0:
             return self._get_result(data_in, self.server.files_data)
         else:
-            # try all the keys that users might have sent things in with:
-            decrypted = False
-            data_in = base64.b64decode(data_in)
-            for qk in self.server.query_keys:
-                plaintext = hybrid_decrypt(data_in, qk)
-                passed = self.server.shibboleth.match(plaintext)
-                if passed:
-                    data_in = (passed.group(self.server.shibboleth_group)
-                               if self.server.shibboleth_group
-                               else plaintext)
-                    decrypted = True
-                    break
-            if not decrypted:
-                print("Could not decrypt incoming message")
-                return None
-            return hybrid_encrypt(
-                    self._get_result(data_in,
-                                     self.server.files_data),
-                    self.server.reply_key)
+            decrypted_query = hybrid_decrypt(base64.b64decode(data_in),
+                                             self.server.query_key)
+            print("decrypted_query =", decrypted_query)
+            plaintext_result = self._get_result(decrypted_query,
+                                                self.server.files_data)
+            print("get_result plaintext result =", plaintext_result)
+            ciphertext_result = hybrid_encrypt(plaintext_result,
+                                               self.server.reply_key)
+            print("get_result ciphertext_result =", ciphertext_result)
+            encoded_ciphertext_result = base64.b64encode(ciphertext_result)
+            print("get_result encoded_ciphertext_result =", encoded_ciphertext_result)
+            return encoded_ciphertext_result
+            print("get_result returned encoded_ciphertext_result")
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
@@ -261,10 +251,16 @@ data.
         my_thread = threading.current_thread()
         my_thread.server.check_data_current()
         my_server = my_thread.server
+        incoming = self.rfile.readline().strip().decode('utf-8')
+        (protocol_version, encryption_version, authentication_version,
+         application_version) = incoming[:4]
         self.wfile.write(
-            bytes(str(
-                my_thread.get_result(
-                    self.rfile.readline().strip().decode('utf-8'))),
+            bytes((protocol_version, encryption_version,
+                   authentication_version, application_version)) +
+            bytes(str(my_thread.get_result(
+                incoming[:4],
+                protocol_version, encryption_version,
+                authentication_version, application_version)),
                   'utf-8'))
 
 class MyUDPHandler(socketserver.BaseRequestHandler):
@@ -287,62 +283,101 @@ data.
         my_thread = threading.current_thread()
         my_server = my_thread.server
         my_server.check_data_current()
+        incoming = self.request[0]
+        (protocol_version, encryption_version, authentication_version,
+         application_version) = incoming[:4]
+        incoming = incoming[4:].strip().decode('utf-8')
+        b64_encoded_str_result = my_thread.get_result(
+            incoming,
+            protocol_version, encryption_version,
+            authentication_version, application_version)
+        print("b64_encoded_str_result =", b64_encoded_str_result)
+        print("type of b64_encoded_str_result =", type(b64_encoded_str_result))
+        print("first element of b64_encoded_str_result =", b64_encoded_str_result[0])
+        print("second element of b64_encoded_str_result =", b64_encoded_str_result[1])
+        print("third element of b64_encoded_str_result =", b64_encoded_str_result[2])
+        # bytes_result = bytes(b64_encoded_str_result, 'utf-8')
+        bytes_result = b64_encoded_str_result
+        print("bytes_result =", bytes_result)
+        version_data = bytes((protocol_version, encryption_version,
+                              authentication_version, application_version))
+        print("version_data =", version_data)
+        versioned_data = version_data + bytes_result
+        print("versioned_data =", versioned_data)
         reply_socket.sendto(
-            bytes(str(
-                my_thread.get_result(
-                    self.request[0].strip().decode('utf-8'))),
-                  'utf-8'),
+            versioned_data,
             self.client_address)
+        print("UDP handler sent versioned data back to client")
 
 def run_server(server):
     server.serve_forever()
 
 def run_servers(host, port, getter, files,
-                query_keys=None, shibboleth=None, shibboleth_group=None,
+                query_key=None,
                 reply_key=None):
     """Run TCP and UDP servers.
 
 They apply the getter argument to the incoming queries, using the
 specified files.
-
     """
     my_server = simple_data_server(
         host, port,
         getter, files,
-        query_keys=query_keys, reply_key=reply_key,
-        shibboleth=shibboleth, shibboleth_group=shibboleth_group)
+        query_key=query_key, reply_key=reply_key)
     my_server.start()
 
 def get_response(query, host, port, tcp=False,
-                query_keys=None, reply_key=None):
-
+                 query_key=None, reply_key=None,
+                 protocol_version=0,
+                 encryption_version=0,
+                 authentication_version=0,
+                 application_version=0):
     """Send your query to the server, and return its result.
 
 This is a client suitable for the simple_data_server class.
-
-If using encryption, the caller should compose the query such that it matches
-the shibboleth regexp.
     """
+    print("get_response query =", query)
     query = query + "\n"
-    if query_keys:
-        query = hybrid_encrypt(query, query_keys[0])
+    if query_key:
+        query = hybrid_encrypt(query, query_key)
+        if encryption_version == 0:
+            encryption_version = 1
     else:
         query = bytes(query, 'utf-8')
+        # this tells the server to treat the data as plaintext
+        encryption_version = 0
+    print("possibly encrypted query =", query)
+    query = (bytes((protocol_version,
+                    encryption_version,
+                    authentication_version,
+                    application_version))
+             + query)
+    print("versioned query =", query)
     if tcp:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             sock.connect((host, int(port)))
             sock.sendall(query)
-            received = str(sock.recv(1024), 'utf-8')
+            received = sock.recv(1024)
         finally:
             sock.close()
     else:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(query, (host, int(port)))
-        received = str(sock.recv(1024), 'utf-8')
-    if reply_key:
-        received = hybrid_decrypt(base64.b64decode(received),
+        received = sock.recv(1024)
+    print("raw received data =", received)
+    (protocol_version, encryption_version,
+     authentication_version, application_version) = received[:4]
+    received = received[4:]
+    print("trimmed received data =", received)
+    decoded_received_data = base64.b64decode(received)
+    print("decoded_received_data =", decoded_received_data)
+    if reply_key and (encryption_version > 0):
+        received = hybrid_decrypt(decoded_received_data,
                                   reply_key)
+        print("decrypted received data =", received)
+    else:
+        received = str(received, 'utf-8')
     return received
 
 def read_key(filename, passphrase=None):
@@ -389,18 +424,11 @@ accompanying README.md, for a less terse description.
                         Otherwise, UDP will be used.
                         Only applies when running as a client; the server does both.""")
     parser.add_argument("--query-key", "-q",
-                        action='append',
                         help="""The key files for decrypting the queries.
                         These are public keys, so may be visible to all users.
                         Because the server cannot know which user is sending
                         an encrypted query, it must try the public query keys
                         for all expected users.""")
-    parser.add_argument("--shibboleth", "-s",
-                        help="""A regexp to detect validly decrypted input.""")
-    parser.add_argument("--shibboleth-group", "-g",
-                        help="""Which group in the shibboleth regexp contains
-                        the actual query.  If not specified, the whole query
-                        is used.""")
     parser.add_argument("--reply-key", "-r",
                         default=None,
                         help="""The key file for encrypting the replies.
@@ -415,7 +443,7 @@ accompanying README.md, for a less terse description.
                         help="""The data to send to the server.""")
     args=parser.parse_args()
     reply_key = None
-    private_key = args.query_key[0] if args.server else args.reply_key
+    private_key = args.query_key if args.server else args.reply_key
     query_passphrase = decouple.config('query_passphrase')
     reply_passphrase = decouple.config('reply_passphrase')
     if private_key:
@@ -423,19 +451,17 @@ accompanying README.md, for a less terse description.
         if key_perms & (stat.S_IROTH | stat.S_IRGRP | stat.S_IWOTH | stat.S_IWGRP):
             print("Key file", private_key, "is open to misuse.")
             sys.exit(1)
-        reply_key = read_key(args.reply_key, reply_passphrase)
-    query_keys = ([read_key(qk, query_passphrase) for qk in args.query_key]
-                  if args.query_key and len(args.query_key) > 0
-                  else None)
+    reply_key = (read_key(args.reply_key, reply_passphrase)
+                 if args.reply_key and len(args.reply_key) > 0
+                 else None)
+    query_key = (read_key(args.query_key, query_passphrase)
+                 if args.query_key and len(args.query_key) > 0
+                 else None)
     if args.server:
         run_servers(args.host, int(args.port),
                     getter=getter,
                     files=files,
-                    query_keys=query_keys,
-                    shibboleth=args.shibboleth,
-                    shibboleth_group=(int(args.shibboleth_group)
-                                      if args.shibboleth_group
-                                      else None),
+                    query_key=query_key,
                     reply_key=reply_key)
         return None
     elif args.gen_key:
@@ -451,7 +477,7 @@ accompanying README.md, for a less terse description.
 
         received = get_response(text,
                                 args.host, args.port, args.tcp,
-                                query_keys=query_keys,
+                                query_key=query_key,
                                 reply_key=reply_key)
 
         if verbose:
