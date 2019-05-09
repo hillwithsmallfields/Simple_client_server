@@ -26,12 +26,8 @@ def read_csv_as_dicts(filename, keyfield='Name'):
 The rows are held in a dictionary, with the given key (by default,
 'Name').
     """
-    data = {}
     with io.open(filename, 'r', encoding='utf-8') as instream:
-        data_reader = csv.DictReader(instream)
-        for row in data_reader:
-            data[row[keyfield]] = row
-    return data
+        return { row[keyfield]: row for row in csv.DictReader(instream) }
 
 def read_csv_as_lists(filename, keycolumn=0):
     """Read a CSV file, producing a list for each row.
@@ -39,12 +35,8 @@ def read_csv_as_lists(filename, keycolumn=0):
 The rows are held in a dictionary, taking the specified column (0 by
 default) for the keys.
     """
-    data = {}
     with io.open(filename, 'r', encoding='utf-8') as instream:
-        data_reader = csv.reader(instream)
-        for row in data_reader:
-            data[row[keycolumn]] = row
-    return data
+        return { [row[keycolumn]]: row for row in csv.reader(instream) }
 
 class simple_data_server():
 
@@ -257,7 +249,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
 It uses the `service_thread' class to determine what to do with the
 data.
     """
-    
+
     def __init__(self,
                  # service,
                  *rest):
