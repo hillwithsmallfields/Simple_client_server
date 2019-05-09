@@ -36,7 +36,7 @@ The rows are held in a dictionary, taking the specified column (0 by
 default) for the keys.
     """
     with io.open(filename, 'r', encoding='utf-8') as instream:
-        return { [row[keycolumn]]: row for row in csv.reader(instream) }
+        return { row[keycolumn]: row for row in csv.reader(instream) }
 
 class simple_data_server():
 
