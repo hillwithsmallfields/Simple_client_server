@@ -148,38 +148,22 @@ encrypted key is returned, with the encrypted input appended.
     initialization_vector = Random.new().read(AES.block_size)
     cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
     symmetrically_encrypted_payload = initialization_vector + cipher.encrypt(plaintext)
-    symmetric_key_and_iv = initialization_vector + symmetric_key
     asymmetrically_encrypted_symmetric_iv_and_key = asymmetric_key.publickey().encrypt(
-        symmetric_key_and_iv, 32)[0]
-    cipher_text = asymmetrically_encrypted_symmetric_iv_and_key + symmetrically_encrypted_payload
-    print("hybrid_encrypt", plaintext, asymmetric_key)
-    print("enc asymmetrically_encrypted_symmetric_iv_and_key =", asymmetrically_encrypted_symmetric_iv_and_key, "of length", len(asymmetrically_encrypted_symmetric_iv_and_key))
-    print("enc symmetrically_encrypted_payload =", symmetrically_encrypted_payload, "of length", len(symmetrically_encrypted_payload))
-    print("enc symmetric_key_and_iv =", symmetric_key_and_iv, "of length", len(symmetric_key_and_iv))
-    print("enc initialization_vector =", initialization_vector, "of length", len(initialization_vector))
-    print("enc symmetric_key =", symmetric_key, "of length", len(symmetric_key))
-    return cipher_text
+        initialization_vector + symmetric_key, 32)[0]
+    return asymmetrically_encrypted_symmetric_iv_and_key + symmetrically_encrypted_payload
 
 def hybrid_decrypt(ciphertext, asymmetric_key):
     """Use the asymmetric key to decrypt a symmetric key at the start of the ciphertext.
 
 That key is then used to decrypt the rest of the ciphertext.
     """
-    print("hybrid_decrypt", ciphertext, asymmetric_key)
     asymmetrically_encrypted_symmetric_iv_and_key = ciphertext[:128]
-    print("dec asymmetrically_encrypted_symmetric_iv_and_key =", asymmetrically_encrypted_symmetric_iv_and_key, "of length", len(asymmetrically_encrypted_symmetric_iv_and_key)) # 128
     symmetrically_encrypted_payload = ciphertext[128:]
-    print("dec symmetrically_encrypted_payload =", symmetrically_encrypted_payload, "of length", len(symmetrically_encrypted_payload)) # 76
     symmetric_key_and_iv = asymmetric_key.decrypt(asymmetrically_encrypted_symmetric_iv_and_key)[:48]
-    print("dec symmetric_key_and_iv =", symmetric_key_and_iv, "of length", len(symmetric_key_and_iv)) # 48 on server, 128 on client
     initialization_vector = symmetric_key_and_iv[:AES.block_size]
-    print("dec initialization_vector =", initialization_vector, "of length", len(initialization_vector)) # 16
     symmetric_key = symmetric_key_and_iv[AES.block_size:]
-    print("dec symmetric_key =", symmetric_key, "of length", len(symmetric_key)) # 112
     cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
-    print("dec cipher =", cipher)
     decrypted_data = cipher.decrypt(symmetrically_encrypted_payload)
-    print("dec decrypted_data =", decrypted_data)
     return decrypted_data[16:].decode()
 
 def hybrid_encrypt_base64(plaintext, asymmetric_key):
@@ -242,19 +226,15 @@ specified.  (The user function doesn't need to handle any of the
 encryption itself.)
 
         """
-        print("get_result incoming data =", data_in)
         if encryption_version >= len(encryptors):
             raise(UnknownEncryptionType)
         else:
             decrypted_query = decryptors[encryption_version](data_in,
                                                              self.server.query_key)
-            print("decrypted_query =", decrypted_query)
             plaintext_result = self._get_result(decrypted_query,
                                                 self.server.files_data)
-            print("get_result plaintext result =", plaintext_result)
             ciphertext_result = encryptors[encryption_version](plaintext_result,
                                                                self.server.reply_key)
-            print("get_result ciphertext_result =", ciphertext_result)
             return ciphertext_result
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
@@ -316,19 +296,14 @@ data.
             incoming,
             protocol_version, encryption_version,
             authentication_version, application_version)
-        print("result =", result)
-        print("type of result =", type(result))
-        bytes_result = bytes(result, 'utf-8')
-        print("bytes_result =", bytes_result)
+        if type(result) != bytes:
+            result = bytes(result, 'utf-8')
         version_data = bytes((protocol_version, encryption_version,
                               authentication_version, application_version))
-        print("version_data =", version_data)
-        versioned_data = version_data + bytes_result
-        print("versioned_data =", versioned_data)
+        versioned_data = version_data + result
         reply_socket.sendto(
             versioned_data,
             self.client_address)
-        print("UDP handler sent versioned data back to client")
 
 def run_server(server):
     server.serve_forever()
@@ -357,7 +332,6 @@ def get_response(query, host, port, tcp=False,
 
 This is a client suitable for the simple_data_server class.
     """
-    print("get_response query =", query)
     query = query + "\n"
     if query_key:
         query = encryptors[encryption_version](query, query_key)
@@ -365,13 +339,11 @@ This is a client suitable for the simple_data_server class.
         query = bytes(query, 'utf-8')
         # this tells the server to treat the data as plaintext
         encryption_version = 0
-    print("possibly encrypted query =", query)
     query = (bytes((protocol_version,
                     encryption_version,
                     authentication_version,
                     application_version))
              + query)
-    print("versioned query =", query)
     if tcp:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -384,17 +356,13 @@ This is a client suitable for the simple_data_server class.
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(query, (host, int(port)))
         received = sock.recv(1024)
-    print("raw received data =", received)
     (protocol_version, encryption_version,
      authentication_version, application_version) = received[:4]
     received = received[4:]
-    print("trimmed received data =", received)
     decoded_received_data = base64.b64decode(received)
-    print("decoded_received_data =", decoded_received_data)
     if reply_key and (encryption_version > 0):
         received = hybrid_decrypt(decoded_received_data,
                                   reply_key)
-        print("decrypted received data =", received)
     else:
         received = str(received, 'utf-8')
     return received
@@ -469,17 +437,6 @@ accompanying README.md, for a less terse description.
     private_key = args.query_key if args.server else args.reply_key
     query_passphrase = decouple.config('query_passphrase')
     reply_passphrase = decouple.config('reply_passphrase')
-    if private_key:
-        key_perms = os.stat(private_key).st_mode
-        if key_perms & (stat.S_IROTH | stat.S_IRGRP | stat.S_IWOTH | stat.S_IWGRP):
-            print("Key file", private_key, "is open to misuse.")
-            sys.exit(1)
-    reply_key = (read_key(args.reply_key, reply_passphrase)
-                 if args.reply_key and len(args.reply_key) > 0
-                 else None)
-    query_key = (read_key(args.query_key, query_passphrase)
-                 if args.query_key and len(args.query_key) > 0
-                 else None)
     if args.gen_key:
         passphrase = reply_passphrase if args.server else query_passphrase
         with open(args.gen_key, 'w') as keystream:
@@ -488,25 +445,38 @@ accompanying README.md, for a less terse description.
                 keystream.write(str(key.exportKey(passphrase=passphrase), 'utf-8'))
                 pubkeystream.write(str(key.publickey().exportKey(passphrase=passphrase), 'utf-8'))
         return None
-    elif args.server:
-        run_servers(args.host, int(args.port),
-                    getter=getter,
-                    files=files,
-                    query_key=query_key,
-                    reply_key=reply_key)
-        return None
     else:
-        text = " ".join(args.data[0])
+        if private_key:
+            key_perms = os.stat(private_key).st_mode
+            if key_perms & (stat.S_IROTH | stat.S_IRGRP | stat.S_IWOTH | stat.S_IWGRP):
+                print("Key file", private_key, "is open to misuse.")
+                sys.exit(1)
+        reply_key = (read_key(args.reply_key, reply_passphrase)
+                     if args.reply_key and len(args.reply_key) > 0
+                     else None)
+        query_key = (read_key(args.query_key, query_passphrase)
+                     if args.query_key and len(args.query_key) > 0
+                     else None)
 
-        received = get_response(text,
-                                args.host, args.port, args.tcp,
-                                query_key=query_key,
-                                reply_key=reply_key)
+        if args.server:
+            run_servers(args.host, int(args.port),
+                        getter=getter,
+                        files=files,
+                        query_key=query_key,
+                        reply_key=reply_key)
+            return None
+        else:
+            text = " ".join(args.data[0])
 
-        if verbose:
-            print("Sent:     {}".format(text))
-            print("Received: {}".format(received))
-        return received
+            received = get_response(text,
+                                    args.host, args.port, args.tcp,
+                                    query_key=query_key,
+                                    reply_key=reply_key)
+
+            if verbose:
+                print("Sent:     {}".format(text))
+                print("Received: {}".format(received))
+            return received
 
 # Example:
 
@@ -515,7 +485,9 @@ demo_filename = "/var/local/demo/demo-main.csv"
 def demo_getter(in_string, files_data):
     """A simple query program that uses the first column in the CSV file
 as the key, and returns the whole row."""
-    return files_data[os.path.basename(demo_filename)].get(in_string, "Unknown")
+    return str(files_data[os.path.basename(demo_filename)]
+               .get(in_string.strip().split()[1],
+                    ["Unknown"]))
 
 def main():
     client_server_main(demo_getter,
