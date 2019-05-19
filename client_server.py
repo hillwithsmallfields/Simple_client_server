@@ -436,7 +436,8 @@ accompanying README.md, for a less terse description.
     parser.add_argument('--server', '-S',
                         action='store_true',
                         help="""Run as the server.
-                        Otherwise, it will run as a client.""")
+                        Otherwise, it will run as a client.
+                        If given with --gen-key, make it generate a key using the server passphrase.""")
     parser.add_argument("--tcp", "-t",
                         action='store_true',
                         help="""Use a TCP connection to communicate with the server.
@@ -457,6 +458,9 @@ accompanying README.md, for a less terse description.
     parser.add_argument("--gen-key",
                         help="""Generate a key in the specified file, and its
                         associated public key in that name + '.pub'.
+                        Uses the 'query_passphrase' from the .env file unless
+                        the '--server' argument is also given, in which case it
+                        uses the 'reply_passphrase'.
                         No other action is done.""")
     parser.add_argument('data', nargs='*', action='append',
                         help="""The data to send to the server.""")
@@ -476,20 +480,20 @@ accompanying README.md, for a less terse description.
     query_key = (read_key(args.query_key, query_passphrase)
                  if args.query_key and len(args.query_key) > 0
                  else None)
-    if args.server:
-        run_servers(args.host, int(args.port),
-                    getter=getter,
-                    files=files,
-                    query_key=query_key,
-                    reply_key=reply_key)
-        return None
-    elif args.gen_key:
-        passphrase = sys.stdin.readline().strip()
+    if args.gen_key:
+        passphrase = reply_passphrase if args.server else query_passphrase
         with open(args.gen_key, 'w') as keystream:
             with open(args.gen_key + ".pub", 'w') as pubkeystream:
                 key = RSA.generate(1024, Random.new().read)
                 keystream.write(str(key.exportKey(passphrase=passphrase), 'utf-8'))
                 pubkeystream.write(str(key.publickey().exportKey(passphrase=passphrase), 'utf-8'))
+        return None
+    elif args.server:
+        run_servers(args.host, int(args.port),
+                    getter=getter,
+                    files=files,
+                    query_key=query_key,
+                    reply_key=reply_key)
         return None
     else:
         text = " ".join(args.data[0])
