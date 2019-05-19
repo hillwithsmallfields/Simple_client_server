@@ -158,7 +158,7 @@ encrypted key is returned, with the encrypted input appended.
     print("enc symmetric_key_and_iv =", symmetric_key_and_iv, "of length", len(symmetric_key_and_iv))
     print("enc initialization_vector =", initialization_vector, "of length", len(initialization_vector))
     print("enc symmetric_key =", symmetric_key, "of length", len(symmetric_key))
-    return base64.b64encode(cipher_text)
+    return cipher_text
 
 def hybrid_decrypt(ciphertext, asymmetric_key):
     """Use the asymmetric key to decrypt a symmetric key at the start of the ciphertext.
@@ -181,6 +181,34 @@ That key is then used to decrypt the rest of the ciphertext.
     decrypted_data = cipher.decrypt(symmetrically_encrypted_payload)
     print("dec decrypted_data =", decrypted_data)
     return decrypted_data[16:].decode()
+
+def hybrid_encrypt_base64(plaintext, asymmetric_key):
+    """As for hybrid_encrypt but the output is base64-encoded."""
+    return base64.b64encode(hybrid_encrypt(plaintext, asymmetric_key))
+
+def hybrid_decrypt_base64(ciphertext, asymmetric_key):
+    """As for hybrid_decrypt but the input is base64-encoded."""
+    return hybrid_decrypt(base64.b64decode(ciphertext), asymmetric_key)
+
+def null_encrypt(plaintext, _):
+    """A function for not encrypting at all."""
+    return plaintext
+
+def null_decrypt(ciphertext, _):
+    """A function for not decrypting at all."""
+    return ciphertext
+
+class UnknownEncryptionType(Exception):
+    pass
+
+encryptors = [ null_encrypt,    # 0
+               hybrid_encrypt,  # 1
+               hybrid_encrypt_base64 # 2
+]
+decryptors = [ null_decrypt,    # 0
+               hybrid_decrypt,  # 1
+               hybrid_decrypt_base64 # 2
+]
 
 class service_thread(threading.Thread):
 
@@ -215,22 +243,19 @@ encryption itself.)
 
         """
         print("get_result incoming data =", data_in)
-        if encryption_version == 0:
-            return self._get_result(data_in, self.server.files_data)
+        if encryption_version >= len(encryptors):
+            raise(UnknownEncryptionType)
         else:
-            decrypted_query = hybrid_decrypt(base64.b64decode(data_in),
-                                             self.server.query_key)
+            decrypted_query = decryptors[encryption_version](data_in,
+                                                             self.server.query_key)
             print("decrypted_query =", decrypted_query)
             plaintext_result = self._get_result(decrypted_query,
                                                 self.server.files_data)
             print("get_result plaintext result =", plaintext_result)
-            ciphertext_result = hybrid_encrypt(plaintext_result,
-                                               self.server.reply_key)
+            ciphertext_result = encryptors[encryption_version](plaintext_result,
+                                                               self.server.reply_key)
             print("get_result ciphertext_result =", ciphertext_result)
-            encoded_ciphertext_result = base64.b64encode(ciphertext_result)
-            print("get_result encoded_ciphertext_result =", encoded_ciphertext_result)
-            return encoded_ciphertext_result
-            print("get_result returned encoded_ciphertext_result")
+            return ciphertext_result
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
@@ -287,17 +312,13 @@ data.
         (protocol_version, encryption_version, authentication_version,
          application_version) = incoming[:4]
         incoming = incoming[4:].strip().decode('utf-8')
-        b64_encoded_str_result = my_thread.get_result(
+        result = my_thread.get_result(
             incoming,
             protocol_version, encryption_version,
             authentication_version, application_version)
-        print("b64_encoded_str_result =", b64_encoded_str_result)
-        print("type of b64_encoded_str_result =", type(b64_encoded_str_result))
-        print("first element of b64_encoded_str_result =", b64_encoded_str_result[0])
-        print("second element of b64_encoded_str_result =", b64_encoded_str_result[1])
-        print("third element of b64_encoded_str_result =", b64_encoded_str_result[2])
-        # bytes_result = bytes(b64_encoded_str_result, 'utf-8')
-        bytes_result = b64_encoded_str_result
+        print("result =", result)
+        print("type of result =", type(result))
+        bytes_result = bytes(result, 'utf-8')
         print("bytes_result =", bytes_result)
         version_data = bytes((protocol_version, encryption_version,
                               authentication_version, application_version))
@@ -329,7 +350,7 @@ specified files.
 def get_response(query, host, port, tcp=False,
                  query_key=None, reply_key=None,
                  protocol_version=0,
-                 encryption_version=0,
+                 encryption_version=2, # hybrid encryption with base64 encoding (see global variables `encryptors' and `decryptors')
                  authentication_version=0,
                  application_version=0):
     """Send your query to the server, and return its result.
@@ -339,9 +360,7 @@ This is a client suitable for the simple_data_server class.
     print("get_response query =", query)
     query = query + "\n"
     if query_key:
-        query = hybrid_encrypt(query, query_key)
-        if encryption_version == 0:
-            encryption_version = 1
+        query = encryptors[encryption_version](query, query_key)
     else:
         query = bytes(query, 'utf-8')
         # this tells the server to treat the data as plaintext
