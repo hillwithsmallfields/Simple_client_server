@@ -194,6 +194,16 @@ decryptors = [ null_decrypt,    # 0
                hybrid_decrypt_base64 # 2
 ]
 
+def encrypt(plaintext, key, encryption_scheme):
+    if encryption_scheme >= len(encryptors):
+        raise(UnknownEncryptionType)
+    return encryptors[encryption_scheme](plaintext, key)
+
+def decrypt(ciphertext, key, encryption_scheme):
+    if encryption_scheme >= len(decryptors):
+        raise(UnknownEncryptionType)
+    return decryptors[encryption_scheme](ciphertext, key)
+
 class service_thread(threading.Thread):
 
     """A wrapper for threads, that passes in a service function.
@@ -226,16 +236,15 @@ specified.  (The user function doesn't need to handle any of the
 encryption itself.)
 
         """
-        if encryption_version >= len(encryptors):
-            raise(UnknownEncryptionType)
-        else:
-            decrypted_query = decryptors[encryption_version](data_in,
-                                                             self.server.query_key)
-            plaintext_result = self._get_result(decrypted_query,
-                                                self.server.files_data)
-            ciphertext_result = encryptors[encryption_version](plaintext_result,
-                                                               self.server.reply_key)
-            return ciphertext_result
+        decrypted_query = decrypt(data_in,
+                                  self.server.query_key,
+                                  encryption_version)
+        plaintext_result = self._get_result(decrypted_query,
+                                            self.server.files_data)
+        ciphertext_result = encrypt(plaintext_result,
+                                    self.server.reply_key,
+                                    encryption_version)
+        return ciphertext_result
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
@@ -334,7 +343,7 @@ This is a client suitable for the simple_data_server class.
     """
     query = query + "\n"
     if query_key:
-        query = encryptors[encryption_version](query, query_key)
+        query = encrypt(query, query_key, encryption_version)
     else:
         query = bytes(query, 'utf-8')
         # this tells the server to treat the data as plaintext
@@ -358,14 +367,7 @@ This is a client suitable for the simple_data_server class.
         received = sock.recv(1024)
     (protocol_version, encryption_version,
      authentication_version, application_version) = received[:4]
-    received = received[4:]
-    decoded_received_data = base64.b64decode(received)
-    if reply_key and (encryption_version > 0):
-        received = hybrid_decrypt(decoded_received_data,
-                                  reply_key)
-    else:
-        received = str(received, 'utf-8')
-    return received
+    return decrypt(received[4:], reply_key, encryption_version)
 
 def read_key(filename, passphrase=None):
     """Wrap importKey with file opening, for easy use in comprehensions."""
