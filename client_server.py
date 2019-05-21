@@ -236,15 +236,12 @@ specified.  (The user function doesn't need to handle any of the
 encryption itself.)
 
         """
-        decrypted_query = decrypt(data_in,
-                                  self.server.query_key,
-                                  encryption_version)
-        plaintext_result = self._get_result(decrypted_query,
-                                            self.server.files_data)
-        ciphertext_result = encrypt(plaintext_result,
-                                    self.server.reply_key,
-                                    encryption_version)
-        return ciphertext_result
+        return encrypt(self._get_result(decrypt(data_in,
+                                                self.server.query_key,
+                                                encryption_version),
+                                        self.server.files_data),
+                       self.server.reply_key,
+                       encryption_version)
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
@@ -415,10 +412,7 @@ accompanying README.md, for a less terse description.
                         Only applies when running as a client; the server does both.""")
     parser.add_argument("--query-key", "-q",
                         help="""The key files for decrypting the queries.
-                        These are public keys, so may be visible to all users.
-                        Because the server cannot know which user is sending
-                        an encrypted query, it must try the public query keys
-                        for all expected users.""")
+                        These are public keys, so may be visible to all users.""")
     parser.add_argument("--reply-key", "-r",
                         default=None,
                         help="""The key file for encrypting the replies.
