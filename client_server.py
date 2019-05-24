@@ -1,5 +1,39 @@
 #!/usr/bin/env python3
 
+# A simple socket-based client and server program, with optional
+# encryption, deliberately avoiding the complexity and overhead of
+# SSL/TLS, for adapting for your particular needs.
+
+# It can run as either the client or the server, and can use either
+# UDP or TCP.  As a client, it sends a request to the server and waits
+# for a response.  As a server, it responds to client requests by
+# applying a user-supplied function to data read from files.  It
+# specifically doesn't use any kind of handshake or back-and-forth
+# protocol: for each request, one message goes from client to server,
+# and one message from server to client.  If using encryption, two
+# pre-shared key pairs are needed: one with the private key on the
+# server, to decrypt the request; and one with the private key on the
+# client, to decrypt the reply.
+
+# The data-handling part handles re-reading files when they change,
+# and is biased towards reading CSV files, as that is what I wanted
+# for my original application of this.
+
+# I wrote this in this form because I couldn't find any single example
+# that did all the pieces of what I wanted.  I hope it is of
+# "examplary" quality for people to base their programs on, but I'm
+# awaiting feedback on that.
+
+# Example application scenario: the program runs as a server on my
+# home server (a Raspberry Pi) and reads a CSV file containing an
+# inventory of my possessions, with shelf/box/cupboard numbers, and a
+# CSV file describing the locations, and tells me where something
+# should be.  An Android app (which I haven't yet written) will fetch
+# completions as I enter the name of something I'm trying to find, and
+# then tell me where the thing is supposedly stored; or will scan the
+# asset tag barcode (yes, I'm that nerdy) on something I'm holding,
+# and tell me which box or shelf I should return it to.
+
 # See:
 # - https://docs.python.org/3.2/library/socketserver.html
 # - https://stackoverflow.com/questions/28426102/python-crypto-rsa-public-private-key-with-large-file/28427259
@@ -19,6 +53,8 @@ import socketserver
 import stat
 import sys
 import threading
+
+#### Handling the underlying data ####
 
 def read_csv_as_dicts(filename, keyfield='Name'):
     """Read a CSV file, producing a dictionary for each row.
@@ -77,10 +113,6 @@ The query function is called with two arguments:
 
 It should return the string to send back over TCP or UDP.
 
-If a `query_key' is given, it is used to decrypt the query.
-
-If a `reply_key' is given, it is used to encrypt the reply.
-
 The servers are represented as the threads that hold them, and the
 threads hold the query function, for reasons explained in the
 docstring of the `service_thread' class.
@@ -137,6 +169,8 @@ docstring of the `service_thread' class.
                     key = None
                 self.files_data[os.path.basename(filename)] = reader(filename, key)
                 self.files_timestamps[filename] = now_timestamp
+
+#### encryption and decryption ####
 
 def hybrid_encrypt(plaintext, asymmetric_key):
     """Encrypt the plaintext, using a randomly generated symmetric key.
@@ -203,6 +237,8 @@ def decrypt(ciphertext, key, encryption_scheme):
     if encryption_scheme >= len(decryptors):
         raise(UnknownEncryptionType)
     return decryptors[encryption_scheme](ciphertext, key)
+
+#### Tying the query handler to the server classes ####
 
 class service_thread(threading.Thread):
 
@@ -310,6 +346,8 @@ data.
         reply_socket.sendto(
             versioned_data,
             self.client_address)
+
+#### High-level functions ####
 
 def run_server(server):
     server.serve_forever()
@@ -444,7 +482,10 @@ accompanying README.md, for a less terse description.
     else:
         if private_key:
             key_perms = os.stat(private_key).st_mode
-            if key_perms & (stat.S_IROTH | stat.S_IRGRP | stat.S_IWOTH | stat.S_IWGRP):
+            if key_perms & (stat.S_IROTH
+                            | stat.S_IRGRP
+                            | stat.S_IWOTH
+                            | stat.S_IWGRP):
                 print("Key file", private_key, "is open to misuse.")
                 sys.exit(1)
         reply_key = (read_key(args.reply_key, reply_passphrase)
@@ -464,17 +505,19 @@ accompanying README.md, for a less terse description.
         else:
             text = " ".join(args.data[0])
 
-            received = get_response(text,
-                                    args.host, args.port, args.tcp,
-                                    query_key=query_key,
-                                    reply_key=reply_key)
+            received = get_response(
+                text,
+                args.host, args.port, args.tcp,
+                encryption_version=(2 if query_key and reply_key else 0),
+                query_key=query_key,
+                reply_key=reply_key)
 
             if verbose:
                 print("Sent:     {}".format(text))
                 print("Received: {}".format(received))
             return received
 
-# Example:
+#### Example ####
 
 demo_filename = "/var/local/demo/demo-main.csv"
 
@@ -482,7 +525,7 @@ def demo_getter(in_string, files_data):
     """A simple query program that uses the first column in the CSV file
 as the key, and returns the whole row."""
     return str(files_data[os.path.basename(demo_filename)]
-               .get(in_string.strip().split()[1],
+               .get(in_string.strip().split()[0],
                     ["Unknown"]))
 
 def main():

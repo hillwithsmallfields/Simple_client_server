@@ -83,33 +83,47 @@ For encryption, there are some further arguments you can supply to
 `run_servers`:
 
     run_servers(host, port, getter, files,
-                query_keys=None,
-                shibboleth=None, shibboleth_group=None,
+                query_key=None,
                 reply_key=None)
 
-The `query_keys` argument should be either `None`, or a list of
-decryption keys, in which case they will all be tried to see if they
-can make sense of the input.  Making sense of the input is defined by
-the `shibboleth` argument, which is a regexp to try on the result of
-the decryption.  When a decryption result matches the regexp, if a
-`shibboleth_group` argument is given, that is used as the match group
-to extract the data to give to the query function; if no
-`shibboleth_group` is given, the entire decryption result is used.
-
-If a `reply_key` is given, it is used to encrypt the reply.
-
-The `get_response` function likewise has some further arguments for
-encryption:
 
     get_response(query, host, port, tcp=False,
-                 query_keys=None, reply_key=None)
+                 encryption_version=2,
+                 query_key=None, reply_key=None)
+
+The `encryption_version` may be:
+
+  - `0` No encryption
+  - `1` Encryption, sent raw
+  - `2` Encryption, send with base64 encoding
+  
+If `encryption_version` is not `0`, `query_key` and `reply_key` should
+be the results of calls to `RSA.importKey`, or equivalent.
+
+Prerequisites
+-------------
+
+If you don't already have them, you should install (probably with
+`pip3`):
+
+  - pycrypto
+  - python-decouple
 
 Examples
 --------
 
 A very simple example is provided at the end of the source file, that
 looks things up in a CSV file `/var/local/demo/demo-main.csv`, using
-the first column as a key.
+the first column as a key.  (A sample data file is provided in this
+directory.)
+
+To run the example server, copy `demo-main.csv` into place, and use:
+
+    ./client_server.py --server --query-key querykey --reply-key replykey.pub
+
+and to run the client, use
+
+    ./client_server.py --query-key querykey.pub --reply-key replykey spinach
 
 The program I started writing it as a wrapper for is for looking up
 where I have stored things at home:
@@ -127,7 +141,10 @@ Development
 ===========
 
 I wrote this partly as an exercise for reminding myself about socket
-programming.  I'll use it as an example for some future learning
-projects:
+programming, and then went on to use it for learning about using
+Python's encryption libraries.  I may later use it as an example for
+some future learning projects:
 
  * Python's logging facilities
+ * Digital signature
+ 
