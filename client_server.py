@@ -116,6 +116,10 @@ The servers are represented as the threads that hold them, and the
 threads hold the query function, for reasons explained in the
 docstring of the `service_thread' class.
 
+Four versioning bytes are included in the protocol, in case someone
+produces incompatible versions later.  For now, only the encryption
+version is used.
+
     """
 
     def __init__(self,
@@ -127,8 +131,10 @@ docstring of the `service_thread' class.
         self.port = port
         # Data
         self.files_readers = files
-        self.files_timestamps = {filename: 0 for filename in files.keys()}
-        self.files_data = {os.path.basename(filename): None for filename in files.keys()}
+        self.files_timestamps = {filename: 0
+                                 for filename in files.keys()}
+        self.files_data = {os.path.basename(filename): None
+                           for filename in files.keys()}
         # Encryption
         self.query_key = query_key
         self.reply_key = reply_key
@@ -166,7 +172,8 @@ docstring of the `service_thread' class.
                     reader = reader[0]
                 else:
                     key = None
-                self.files_data[os.path.basename(filename)] = reader(filename, key)
+                self.files_data[os.path.basename(filename)] = reader(filename,
+                                                                     key)
                 self.files_timestamps[filename] = now_timestamp
 
 #### encryption and decryption ####
@@ -180,10 +187,12 @@ encrypted key is returned, with the encrypted input appended.
     symmetric_key = Random.new().read(32)
     initialization_vector = Random.new().read(AES.block_size)
     cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
-    symmetrically_encrypted_payload = initialization_vector + cipher.encrypt(plaintext)
+    symmetrically_encrypted_payload = (initialization_vector
+                                       + cipher.encrypt(plaintext))
     asymmetrically_encrypted_symmetric_iv_and_key = asymmetric_key.publickey().encrypt(
         initialization_vector + symmetric_key, 32)[0]
-    return asymmetrically_encrypted_symmetric_iv_and_key + symmetrically_encrypted_payload
+    return (asymmetrically_encrypted_symmetric_iv_and_key
+            + symmetrically_encrypted_payload)
 
 def hybrid_decrypt(ciphertext, asymmetric_key):
     """Use the asymmetric key to decrypt a symmetric key at the start of the ciphertext.
@@ -409,6 +418,51 @@ def read_key(filename, passphrase=None):
         return RSA.importKey(reply_stream.read(),
                              passphrase=passphrase)
 
+def client_server_add_arguments(parser, with_short=False):
+    """Add the argparse arguments for the server.
+If the second argument is given and non-False, add short
+options too; otherwise make them something less likely
+to clash with non-demo applications."""
+    parser.add_argument('--host', '-H' if with_short else '-SH',
+                        default="127.0.0.1",
+                        help="""The server to handle the query.""")
+    parser.add_argument('--port', '-P' if with_short else '-SP',
+                        default=9999,
+                        help="""The port on which to send the query.""")
+    parser.add_argument("--tcp", "-t" if with_short else '-St',
+                        action='store_true',
+                        help="""Use a TCP connection to communicate with the server.
+                        Otherwise, UDP will be used.
+                        Only applies when running as a client; the server does both.""")
+    parser.add_argument("--query-key", "-q" if with_short else '-Sqk',
+                        help="""The key files for decrypting the queries.
+                        These are public keys, so may be visible to all users.""")
+    parser.add_argument("--reply-key", "-r" if with_short else '-Srk',
+                        default=None,
+                        help="""The key file for encrypting the replies.
+                        This is a private key, so should be kept unreadable
+                        to everyone except the server user.
+                        If this is not given, replies are sent in plaintext.""")
+
+def check_private_key_privacy(args):
+    private_key = args.query_key if args.server else args.reply_key
+    if private_key:
+        key_perms = os.stat(private_key).st_mode
+        if key_perms & (stat.S_IROTH
+                        | stat.S_IRGRP
+                        | stat.S_IWOTH
+                        | stat.S_IWGRP):
+            print("Key file", private_key, "is open to misuse.")
+            sys.exit(1)
+
+def read_keys_from_files(args, query_passphrase, reply_passphrase):
+    return ((read_key(args.query_key, query_passphrase)
+             if args.query_key and len(args.query_key) > 0
+             else None),
+            (read_key(args.reply_key, reply_passphrase)
+             if args.reply_key and len(args.reply_key) > 0
+             else None))
+
 def client_server_main(getter, files, verbose=False):
     """Run a simple client or server.
 
@@ -426,36 +480,15 @@ built-in reader function using csv.DictReader, or a number, in which
 case it is used as the key for a built-in reader function using
 csv.reader.
 
+You may be able to use this directly as the main function of your
+program, but you will probably have extra pieces you need, so some
+parts of it have been split out for you to call from your own main.
+
 See the documentation of the simple_data_server class, or the
 accompanying README.md, for a less terse description.
 
     """
     parser=argparse.ArgumentParser()
-    parser.add_argument('--host', '-H',
-                        default="127.0.0.1",
-                        help="""The server to handle the query.""")
-    parser.add_argument('--port', '-P',
-                        default=9999,
-                        help="""The port on which to send the query.""")
-    parser.add_argument('--server', '-S',
-                        action='store_true',
-                        help="""Run as the server.
-                        Otherwise, it will run as a client.
-                        If given with --gen-key, make it generate a key using the server passphrase.""")
-    parser.add_argument("--tcp", "-t",
-                        action='store_true',
-                        help="""Use a TCP connection to communicate with the server.
-                        Otherwise, UDP will be used.
-                        Only applies when running as a client; the server does both.""")
-    parser.add_argument("--query-key", "-q",
-                        help="""The key files for decrypting the queries.
-                        These are public keys, so may be visible to all users.""")
-    parser.add_argument("--reply-key", "-r",
-                        default=None,
-                        help="""The key file for encrypting the replies.
-                        This is a private key, so should be kept unreadable
-                        to everyone except the server user.
-                        If this is not given, replies are sent in plaintext.""")
     parser.add_argument("--gen-key",
                         help="""Generate a key in the specified file, and its
                         associated public key in that name + '.pub'.
@@ -463,11 +496,15 @@ accompanying README.md, for a less terse description.
                         the '--server' argument is also given, in which case it
                         uses the 'reply_passphrase'.
                         No other action is done.""")
+    parser.add_argument('--server', '-S',
+                        action='store_true',
+                        help="""Run as the server.
+                        Otherwise, it will run as a client.
+                        If given with --gen-key, make it generate a key using the server passphrase.""")
     parser.add_argument('data', nargs='*', action='append',
                         help="""The data to send to the server.""")
+    client_server_add_arguments(parser)
     args=parser.parse_args()
-    reply_key = None
-    private_key = args.query_key if args.server else args.reply_key
     query_passphrase = decouple.config('query_passphrase')
     reply_passphrase = decouple.config('reply_passphrase')
     if args.gen_key:
@@ -475,24 +512,17 @@ accompanying README.md, for a less terse description.
         with open(args.gen_key, 'w') as keystream:
             with open(args.gen_key + ".pub", 'w') as pubkeystream:
                 key = RSA.generate(1024, Random.new().read)
-                keystream.write(str(key.exportKey(passphrase=passphrase), 'utf-8'))
-                pubkeystream.write(str(key.publickey().exportKey(passphrase=passphrase), 'utf-8'))
+                keystream.write(str(key.exportKey(passphrase=passphrase),
+                                    'utf-8'))
+                pubkeystream.write(
+                    str(key.publickey().exportKey(passphrase=passphrase),
+                        'utf-8'))
         return None
     else:
-        if private_key:
-            key_perms = os.stat(private_key).st_mode
-            if key_perms & (stat.S_IROTH
-                            | stat.S_IRGRP
-                            | stat.S_IWOTH
-                            | stat.S_IWGRP):
-                print("Key file", private_key, "is open to misuse.")
-                sys.exit(1)
-        reply_key = (read_key(args.reply_key, reply_passphrase)
-                     if args.reply_key and len(args.reply_key) > 0
-                     else None)
-        query_key = (read_key(args.query_key, query_passphrase)
-                     if args.query_key and len(args.query_key) > 0
-                     else None)
+        check_private_key_privacy(args)
+        query_key, reply_key = read_keys_from_files(args,
+                                                    query_passphrase,
+                                                    reply_passphrase)
 
         if args.server:
             run_servers(args.host, int(args.port),
