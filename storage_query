@@ -1,0 +1,2 @@
+#!/bin/bash
+./client_server.py --port 9797 --query-key $OPEN_PROJECTS/JCGS_py_server/querykey.pub --reply-key $OPEN_PROJECTS/JCGS_py_server/replykey $*
