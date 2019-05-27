@@ -418,16 +418,17 @@ def read_key(filename, passphrase=None):
         return RSA.importKey(reply_stream.read(),
                              passphrase=passphrase)
 
-def client_server_add_arguments(parser, with_short=False):
+def client_server_add_arguments(parser, port=9999, with_short=False):
     """Add the argparse arguments for the server.
-If the second argument is given and non-False, add short
+The optional argument port specifies the default port to use.
+If the argument with_short is given and non-False, add short
 options too; otherwise make them something less likely
 to clash with non-demo applications."""
     parser.add_argument('--host', '-H' if with_short else '-SH',
                         default="127.0.0.1",
                         help="""The server to handle the query.""")
     parser.add_argument('--port', '-P' if with_short else '-SP',
-                        default=9999,
+                        default=port,
                         help="""The port on which to send the query.""")
     parser.add_argument("--tcp", "-t" if with_short else '-St',
                         action='store_true',
