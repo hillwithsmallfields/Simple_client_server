@@ -287,6 +287,21 @@ encryption itself.)
                        self.server.reply_key,
                        encryption_version)
 
+    def process_request(this, incoming):
+        (protocol_version, encryption_version, authentication_version,
+         application_version) = incoming[:4]
+        incoming = incoming[4:].strip().decode('utf-8')
+        this.server.check_data_current()
+        result = this.get_result(
+            incoming,
+            protocol_version, encryption_version,
+            authentication_version, application_version)
+        if type(result) != bytes:
+            result = bytes(result, 'utf-8')
+        version_data = bytes((protocol_version, encryption_version,
+                              authentication_version, application_version))
+        return version_data + result
+
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
     """The TCP handler for the simple_data_server class.
@@ -303,20 +318,7 @@ data.
         # self.service = service
 
     def handle(self):
-        my_thread = threading.current_thread()
-        my_thread.server.check_data_current()
-        my_server = my_thread.server
-        incoming = self.rfile.readline().strip().decode('utf-8')
-        (protocol_version, encryption_version, authentication_version,
-         application_version) = incoming[:4]
-        self.wfile.write(
-            bytes((protocol_version, encryption_version,
-                   authentication_version, application_version)) +
-            bytes(str(my_thread.get_result(
-                incoming[:4],
-                protocol_version, encryption_version,
-                authentication_version, application_version)),
-                  'utf-8'))
+        self.wfile.write(threading.current_thread().process_request(self.rfile.readline().strip().decode('utf-8')))
 
 class MyUDPHandler(socketserver.BaseRequestHandler):
 
@@ -335,24 +337,8 @@ data.
 
     def handle(self):
         reply_socket = self.request[1]
-        my_thread = threading.current_thread()
-        my_server = my_thread.server
-        my_server.check_data_current()
-        incoming = self.request[0]
-        (protocol_version, encryption_version, authentication_version,
-         application_version) = incoming[:4]
-        incoming = incoming[4:].strip().decode('utf-8')
-        result = my_thread.get_result(
-            incoming,
-            protocol_version, encryption_version,
-            authentication_version, application_version)
-        if type(result) != bytes:
-            result = bytes(result, 'utf-8')
-        version_data = bytes((protocol_version, encryption_version,
-                              authentication_version, application_version))
-        versioned_data = version_data + result
         reply_socket.sendto(
-            versioned_data,
+            threading.current_thread().process_request(self.request[0]),
             self.client_address)
 
 #### High-level functions ####
