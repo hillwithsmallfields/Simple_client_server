@@ -242,6 +242,7 @@ def encrypt(plaintext, key, encryption_scheme):
     return encryptors[encryption_scheme](plaintext, key)
 
 def decrypt(ciphertext, key, encryption_scheme):
+    print("encryption_scheme is", encryption_scheme)
     if encryption_scheme >= len(decryptors):
         raise(UnknownEncryptionType)
     return decryptors[encryption_scheme](ciphertext, key)
@@ -288,9 +289,14 @@ encryption itself.)
                        encryption_version)
 
     def process_request(this, incoming):
+        print("process_request incoming type", type(incoming))
         (protocol_version, encryption_version, authentication_version,
-         application_version) = incoming[:4]
-        incoming = incoming[4:].strip().decode('utf-8')
+         application_version) = bytes(incoming[:4], 'utf-8')
+        print("versions", protocol_version, encryption_version, authentication_version, application_version)
+        incoming = incoming[4:].strip()
+        if type(incoming) == bytes:
+            incoming = incoming.decode('utf-8')
+            print("incoming type now", type(incoming))
         this.server.check_data_current()
         result = this.get_result(
             incoming,
