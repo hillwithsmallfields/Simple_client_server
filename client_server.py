@@ -291,7 +291,7 @@ encryption itself.)
     def process_request(this, incoming):
         print("process_request incoming type", type(incoming))
         (protocol_version, encryption_version, authentication_version,
-         application_version) = bytes(incoming[:4], 'utf-8')
+         application_version) = incoming[:4] if type(incoming) == bytes else (ord(incoming[0]), ord(incoming[1]), ord(incoming[2]), ord(incoming[3]))
         print("versions", protocol_version, encryption_version, authentication_version, application_version)
         incoming = incoming[4:].strip()
         if type(incoming) == bytes:
