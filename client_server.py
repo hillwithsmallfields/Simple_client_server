@@ -227,23 +227,22 @@ def null_decrypt(ciphertext, _):
 class UnknownEncryptionType(Exception):
     pass
 
-encryptors = [ null_encrypt,    # 0
-               hybrid_encrypt,  # 1
-               hybrid_encrypt_base64 # 2
-]
-decryptors = [ null_decrypt,    # 0
-               hybrid_decrypt,  # 1
-               hybrid_decrypt_base64 # 2
-]
+encryptors = { ord('0'): null_encrypt,
+               ord('h'): hybrid_encrypt,
+               ord('H'): hybrid_encrypt_base64
+}
+decryptors = { ord('0'): null_decrypt,
+               ord('h'): hybrid_decrypt,
+               ord('H'): hybrid_decrypt_base64
+}
 
 def encrypt(plaintext, key, encryption_scheme):
-    if encryption_scheme >= len(encryptors):
+    if encryption_scheme not in encryptors:
         raise(UnknownEncryptionType)
     return encryptors[encryption_scheme](plaintext, key)
 
 def decrypt(ciphertext, key, encryption_scheme):
-    print("encryption_scheme is", encryption_scheme)
-    if encryption_scheme >= len(decryptors):
+    if encryption_scheme not in decryptors:
         raise(UnknownEncryptionType)
     return decryptors[encryption_scheme](ciphertext, key)
 
@@ -272,8 +271,8 @@ so we use the thread (this class) as somewhere to store the function.
         self._get_result = get_result
 
     def get_result(self, data_in,
-                   protocol_version=0, encryption_version=0,
-                   authentication_version=0, application_version=0):
+                   protocol_version=ord('0'), encryption_version=ord('0'),
+                   authentication_version=ord('0'), application_version=ord('0')):
         """Return the result corresponding to the input argument.
 
 This calls the user-supplied get_result function, using encryption if
@@ -306,6 +305,7 @@ encryption itself.)
             result = bytes(result, 'utf-8')
         version_data = bytes((protocol_version, encryption_version,
                               authentication_version, application_version))
+        print("process_request returning", version_data + result)
         return version_data + result
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
@@ -368,10 +368,10 @@ specified files.
 
 def get_response(query, host, port, tcp=False,
                  query_key=None, reply_key=None,
-                 protocol_version=0,
-                 encryption_version=2, # hybrid encryption with base64 encoding (see global variables `encryptors' and `decryptors')
-                 authentication_version=0,
-                 application_version=0):
+                 protocol_version=ord('0'),
+                 encryption_version=ord('H'), # hybrid encryption with base64 encoding (see global variables `encryptors' and `decryptors')
+                 authentication_version=ord('0'),
+                 application_version=ord('0')):
     """Send your query to the server, and return its result.
 
 This is a client suitable for the simple_data_server class.
@@ -530,7 +530,7 @@ accompanying README.md, for a less terse description.
             received = get_response(
                 text,
                 args.host, args.port, args.tcp,
-                encryption_version=(2 if query_key and reply_key else 0),
+                encryption_version=ord('H' if query_key and reply_key else '0'),
                 query_key=query_key,
                 reply_key=reply_key)
 
