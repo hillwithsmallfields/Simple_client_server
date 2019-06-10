@@ -21,7 +21,7 @@
 
 # I wrote this in this form because I couldn't find any single example
 # that did all the pieces of what I wanted.  I hope it is of
-# "examplary" quality for people to base their programs on, but I'm
+# "exemplary" quality for people to base their programs on, but I'm
 # awaiting feedback on that.
 
 # Example application scenario: the program runs as a server on my
