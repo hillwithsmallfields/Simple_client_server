@@ -337,6 +337,8 @@ data.
     def handle(self):
         self.wfile.write(
             threading.current_thread().process_request(
+                # This probably shouldn't be a readline, but I'm not
+                # sure how else to decide that we've read the lot
                 self.rfile.readline().strip().decode('utf-8')))
 
 class MyUDPHandler(socketserver.BaseRequestHandler):
@@ -410,13 +412,13 @@ This is a client suitable for the simple_data_server class.
         try:
             sock.connect((host, int(port)))
             sock.sendall(query)
-            received = sock.recv(1024*8)
+            received = sock.recv(1024)
         finally:
             sock.close()
     else:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(query, (host, int(port)))
-        received = sock.recv(1024*8)
+        received = sock.recv(1024)
     (protocol_version, encryption_version,
      authentication_version, application_version) = received[:4]
     return decrypt(received[4:], reply_key, encryption_version)
