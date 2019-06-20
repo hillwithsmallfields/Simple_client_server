@@ -38,9 +38,6 @@
 # - https://docs.python.org/3.2/library/socketserver.html
 # - https://stackoverflow.com/questions/28426102/python-crypto-rsa-public-private-key-with-large-file/28427259
 
-from Crypto.Cipher import AES
-from Crypto.PublicKey import RSA
-from Crypto import Random
 import argparse
 import base64
 import csv
@@ -52,6 +49,9 @@ import socketserver
 import stat
 import sys
 import threading
+from Crypto.Cipher import AES
+from Crypto.PublicKey import RSA
+from Crypto import Random
 
 #### Handling the underlying data ####
 
@@ -62,7 +62,8 @@ The rows are held in a dictionary, with the given key (by default,
 'Name').
     """
     with io.open(filename, 'r', encoding='utf-8') as instream:
-        return { row[keyfield]: row for row in csv.DictReader(instream) }
+        return {row[keyfield]: row
+                for row in csv.DictReader(instream)}
 
 def read_csv_as_lists(filename, keycolumn=0):
     """Read a CSV file, producing a list for each row.
@@ -71,7 +72,8 @@ The rows are held in a dictionary, taking the specified column (0 by
 default) for the keys.
     """
     with io.open(filename, 'r', encoding='utf-8') as instream:
-        return { row[keycolumn]: row for row in csv.reader(instream) }
+        return {row[keycolumn]: row
+                for row in csv.reader(instream)}
 
 class simple_data_server():
 
@@ -156,7 +158,7 @@ version is used.
         self.tcp_server.start()
 
     def check_data_current(self):
-        """Check for the data files changing, and re-read them if necessary."""
+        """Check for the data files changing, re-reading if necessary."""
         for filename, timestamp in self.files_timestamps.items():
             now_timestamp = os.path.getctime(filename)
             if now_timestamp > timestamp:
@@ -189,19 +191,22 @@ encrypted key is returned, with the encrypted input appended.
     cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
     symmetrically_encrypted_payload = (initialization_vector
                                        + cipher.encrypt(plaintext))
-    asymmetrically_encrypted_symmetric_iv_and_key = asymmetric_key.publickey().encrypt(
-        initialization_vector + symmetric_key, 32)[0]
+    asymmetrically_encrypted_symmetric_iv_and_key = (
+        asymmetric_key.publickey().encrypt(
+            initialization_vector + symmetric_key, 32)[0])
     return (asymmetrically_encrypted_symmetric_iv_and_key
             + symmetrically_encrypted_payload)
 
 def hybrid_decrypt(ciphertext, asymmetric_key):
-    """Use the asymmetric key to decrypt a symmetric key at the start of the ciphertext.
+    """Use the asymmetric key to decrypt a symmetric key
+at the start of the ciphertext.
 
 That key is then used to decrypt the rest of the ciphertext.
     """
     asymmetrically_encrypted_symmetric_iv_and_key = ciphertext[:128]
     symmetrically_encrypted_payload = ciphertext[128:]
-    symmetric_key_and_iv = asymmetric_key.decrypt(asymmetrically_encrypted_symmetric_iv_and_key)[:48]
+    symmetric_key_and_iv = asymmetric_key.decrypt(
+        asymmetrically_encrypted_symmetric_iv_and_key)[:48]
     initialization_vector = symmetric_key_and_iv[:AES.block_size]
     symmetric_key = symmetric_key_and_iv[AES.block_size:]
     cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
@@ -292,7 +297,10 @@ encryption itself.)
         print("process_request incoming type", type(incoming))
         (protocol_version, encryption_version, authentication_version,
          application_version) = bytes(incoming[:4], 'utf-8')
-        print("versions", protocol_version, encryption_version, authentication_version, application_version)
+        print("versions", protocol_version,
+              encryption_version,
+              authentication_version,
+              application_version)
         incoming = incoming[4:].strip()
         if type(incoming) == bytes:
             incoming = incoming.decode('utf-8')
@@ -324,7 +332,9 @@ data.
         # self.service = service
 
     def handle(self):
-        self.wfile.write(threading.current_thread().process_request(self.rfile.readline().strip().decode('utf-8')))
+        self.wfile.write(
+            threading.current_thread().process_request(
+                self.rfile.readline().strip().decode('utf-8')))
 
 class MyUDPHandler(socketserver.BaseRequestHandler):
 
@@ -344,7 +354,8 @@ data.
     def handle(self):
         reply_socket = self.request[1]
         reply_socket.sendto(
-            threading.current_thread().process_request(self.request[0]),
+            threading.current_thread().process_request(
+                self.request[0]),
             self.client_address)
 
 #### High-level functions ####
@@ -369,7 +380,9 @@ specified files.
 def get_response(query, host, port, tcp=False,
                  query_key=None, reply_key=None,
                  protocol_version=0,
-                 encryption_version=2, # hybrid encryption with base64 encoding (see global variables `encryptors' and `decryptors')
+                 # hybrid encryption with base64 encoding (see global
+                 # variables `encryptors' and `decryptors'):
+                 encryption_version=2,
                  authentication_version=0,
                  application_version=0):
     """Send your query to the server, and return its result.
@@ -424,18 +437,20 @@ to clash with non-demo applications."""
                         help="""The port on which to send the query.""")
     parser.add_argument("--tcp", "-t" if with_short else '-St',
                         action='store_true',
-                        help="""Use a TCP connection to communicate with the server.
+                        help="""Use a TCP connection the server.
                         Otherwise, UDP will be used.
-                        Only applies when running as a client; the server does both.""")
+                        Only applies when running as a client;
+                        the server always does both.""")
     parser.add_argument("--query-key", "-q" if with_short else '-Sqk',
                         help="""The key files for decrypting the queries.
-                        These are public keys, so may be visible to all users.""")
+                        These are public keys, so may be visible to
+                        all users.""")
     parser.add_argument("--reply-key", "-r" if with_short else '-Srk',
                         default=None,
                         help="""The key file for encrypting the replies.
                         This is a private key, so should be kept unreadable
                         to everyone except the server user.
-                        If this is not given, replies are sent in plaintext.""")
+                        Without this, replies are sent in plaintext.""")
 
 def check_private_key_privacy(args):
     private_key = args.query_key if args.server else args.reply_key
@@ -493,7 +508,8 @@ accompanying README.md, for a less terse description.
                         action='store_true',
                         help="""Run as the server.
                         Otherwise, it will run as a client.
-                        If given with --gen-key, make it generate a key using the server passphrase.""")
+                        If given with --gen-key,
+                        make it generate a key using the server passphrase.""")
     parser.add_argument('data', nargs='*', action='append',
                         help="""The data to send to the server.""")
     client_server_add_arguments(parser)
