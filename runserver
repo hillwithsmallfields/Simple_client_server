@@ -1,0 +1,2 @@
+#!/bin/bash
+./client_server.py --server --query-key querykey --reply-key replykey.pub
