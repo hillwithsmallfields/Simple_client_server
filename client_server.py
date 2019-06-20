@@ -58,8 +58,8 @@ from Crypto import Random
 def read_csv_as_dicts(filename, keyfield='Name'):
     """Read a CSV file, producing a dictionary for each row.
 
-The rows are held in a dictionary, with the given key (by default,
-'Name').
+    The rows are held in a dictionary, with the named column as the
+    key (by default, the column called 'Name').
     """
     with io.open(filename, 'r', encoding='utf-8') as instream:
         return {row[keyfield]: row
@@ -68,8 +68,8 @@ The rows are held in a dictionary, with the given key (by default,
 def read_csv_as_lists(filename, keycolumn=0):
     """Read a CSV file, producing a list for each row.
 
-The rows are held in a dictionary, taking the specified column (0 by
-default) for the keys.
+    The rows are held in a dictionary, taking the specified column (0 by
+    default) for the keys.
     """
     with io.open(filename, 'r', encoding='utf-8') as instream:
         return {row[keycolumn]: row
@@ -79,48 +79,48 @@ class simple_data_server():
 
     """A pair of TCP and UDP servers for accessing data from some files.
 
-The servers use the same underlying function and data, and this class
-provides a place to hold the description of the files used for the
-data.
+    The servers use the same underlying function and data, and this class
+    provides a place to hold the description of the files used for the
+    data.
 
-The function `client_server_main' is provided as an easy way to use
-this class.
+    The function `client_server_main' is provided as an easy way to use
+    this class.
 
-The user specifies a function for getting the result, and a
-description of the files to read to get the data.  If the files have
-changed since the previous use, they are re-read before the user
-function is called.
+    The user specifies a function for getting the result, and a
+    description of the files to read to get the data.  If the files have
+    changed since the previous use, they are re-read before the user
+    function is called.
 
-The file description is a dictionary binding filenames to indications
-of how to read the file:
+    The file description is a dictionary binding filenames to indications
+    of how to read the file:
 
-  - a string, meaning to read the file as CSV and produce a dictionary
-    of row dictionaries, using the string to select the column to use
-    for the keys in the outer dictionary
+      - a string, meaning to read the file as CSV and produce a dictionary
+        of row dictionaries, using the string to select the column to use
+        for the keys in the outer dictionary
 
-  - a number, meaning to read the file as CSV and produce a dictionary
-    of row lists, with the number selecting the column to use for the
-    dictionary keys
+      - a number, meaning to read the file as CSV and produce a dictionary
+        of row lists, with the number selecting the column to use for the
+        dictionary keys
 
-  - a tuple of a function and a value to pass as the second argument of
-    the function, the first argument being the filename
+      - a tuple of a function and a value to pass as the second argument of
+        the function, the first argument being the filename
 
-The query function is called with two arguments:
+    The query function is called with two arguments:
 
-  - the data from the TCP or UDP input
+      - the data from the TCP or UDP input
 
-  - a dictionary binding the basename of each filename to the data
-    read from that file
+      - a dictionary binding the basename of each filename to the data
+        read from that file
 
-It should return the string to send back over TCP or UDP.
+    It should return the string to send back over TCP or UDP.
 
-The servers are represented as the threads that hold them, and the
-threads hold the query function, for reasons explained in the
-docstring of the `service_thread' class.
+    The servers are represented as the threads that hold them, and the
+    threads hold the query function, for reasons explained in the
+    docstring of the `service_thread' class.
 
-Four versioning bytes are included in the protocol, in case someone
-produces incompatible versions later.  For now, only the encryption
-version is used.
+    Four versioning bytes are included in the protocol, in case someone
+    produces incompatible versions later.  For now, only the encryption
+    version is used.
 
     """
 
@@ -183,8 +183,8 @@ version is used.
 def hybrid_encrypt(plaintext, asymmetric_key):
     """Encrypt the plaintext, using a randomly generated symmetric key.
 
-The symmetric key is encrypted with the given asymmetric_key, and that
-encrypted key is returned, with the encrypted input appended.
+    The symmetric key is encrypted with the given asymmetric_key, and
+    that encrypted key is returned, with the encrypted input appended.
     """
     symmetric_key = Random.new().read(32)
     initialization_vector = Random.new().read(AES.block_size)
@@ -198,10 +198,10 @@ encrypted key is returned, with the encrypted input appended.
             + symmetrically_encrypted_payload)
 
 def hybrid_decrypt(ciphertext, asymmetric_key):
-    """Use the asymmetric key to decrypt a symmetric key
-at the start of the ciphertext.
+    """Use the asymmetric key to decrypt a symmetric key.
 
-That key is then used to decrypt the rest of the ciphertext.
+    The asymmetric key is at the start of the ciphertext.  That key is
+    then used to decrypt the rest of the ciphertext.
     """
     asymmetrically_encrypted_symmetric_iv_and_key = ciphertext[:128]
     symmetrically_encrypted_payload = ciphertext[128:]
@@ -231,26 +231,36 @@ def null_decrypt(ciphertext, _):
 
 class UnknownEncryptionType(Exception):
 
+    """An exception for when the encryption type requested is unsupported."""
+
     def __init__(self, encryption_type):
         self.encryption_type = encryption_type
 
 encryptors = {ord('0'): null_encrypt,
               ord('p'): null_encrypt,
-              ord('h'): hybrid_encrypt,
+              ord('h'): hybrid_encrypt, # don't expect this to work, while we still use readline
               ord('H'): hybrid_encrypt_base64
 }
 decryptors = {ord('0'): null_decrypt,
               ord('p'): null_decrypt,
-              ord('h'): hybrid_decrypt,
+              ord('h'): hybrid_decrypt, # don't expect this to work, while we still use readline
               ord('H'): hybrid_decrypt_base64
 }
 
 def encrypt(plaintext, key, encryption_scheme):
+    """Encrypt plaintext with a key in a specified way.
+
+    This encapsulates the lookup and calling of encryption functions.
+    """
     if encryption_scheme not in encryptors:
         raise(UnknownEncryptionType(encryption_scheme))
     return encryptors[encryption_scheme](plaintext, key)
 
 def decrypt(ciphertext, key, encryption_scheme):
+    """Decrypt ciphertext with a key in a specified way.
+
+    This encapsulates the lookup and calling of decryption functions.
+    """
     if encryption_scheme not in decryptors:
         raise(UnknownEncryptionType(encryption_scheme))
     return decryptors[encryption_scheme](ciphertext, key)
@@ -261,13 +271,13 @@ class service_thread(threading.Thread):
 
     """A wrapper for threads, that passes in a service function.
 
-The rationale for it is that the application-specific handlers passed
-to `socketserver.TCPServer' and `socketserver.UDPServer' are classes
-rather than class instances, so, as the instantiation of them is done
-out of our control, we can't pass in a query function argument.
-However, in our query handler, we can find what the current thread is,
-so we use the thread (this class) as somewhere to store the function.
-
+    The rationale for it is that the application-specific handlers
+    passed to `socketserver.TCPServer' and `socketserver.UDPServer'
+    are classes rather than class instances, so, as the instantiation
+    of them is done out of our control, we can't pass in a query
+    function argument.  However, in our query handler, we can find
+    what the current thread is, so we use the thread (this class) as
+    somewhere to store the function.
     """
 
     def __init__(self,
@@ -284,10 +294,9 @@ so we use the thread (this class) as somewhere to store the function.
                    authentication_version=ord('0'), application_version=ord('0')):
         """Return the result corresponding to the input argument.
 
-This calls the user-supplied get_result function, using encryption if
-specified.  (The user function doesn't need to handle any of the
-encryption itself.)
-
+        This calls the user-supplied get_result function, using
+        encryption if specified.  (The user function doesn't handle
+        any of the encryption itself.)
         """
         return encrypt(self._get_result(decrypt(data_in,
                                                 self.server.query_key,
@@ -323,8 +332,8 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
 
     """The TCP handler for the simple_data_server class.
 
-It uses the `service_thread' class to determine what to do with the
-data.
+    It uses the `service_thread' class to determine what to do with the
+    data.
     """
 
     def __init__(self,
@@ -335,6 +344,11 @@ data.
         # self.service = service
 
     def handle(self):
+        """Handle a TCP request.
+
+        The user-supplied 'getter' function is used to go from the
+        input to the output.
+        """
         self.wfile.write(
             threading.current_thread().process_request(
                 # This probably shouldn't be a readline, but I'm not
@@ -345,8 +359,8 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
 
     """The UDP handler for the simple_data_server class.
 
-It uses the `service_thread' class to determine what to do with the
-data.
+    It uses the `service_thread' class to determine what to do with the
+    data.
     """
 
     def __init__(self,
@@ -357,6 +371,11 @@ data.
         # self.service = service
 
     def handle(self):
+        """Handle a UDP request.
+
+        The user-supplied 'getter' function is used to go from the
+        input to the output.
+        """
         reply_socket = self.request[1]
         reply_socket.sendto(
             threading.current_thread().process_request(
@@ -373,8 +392,8 @@ def run_servers(host, port, getter, files,
                 reply_key=None):
     """Run TCP and UDP servers.
 
-They apply the getter argument to the incoming queries, using the
-specified files.
+    They each apply the getter argument to the incoming queries, using
+    the specified files.
     """
     my_server = simple_data_server(
         host, port,
@@ -390,7 +409,8 @@ def get_response(query, host, port, tcp=False,
                  application_version=ord('0')):
     """Send your query to the server, and return its result.
 
-This is a client suitable for the simple_data_server class.
+    This is the core of a client suitable for the simple_data_server
+    class.
     """
     if query_key:
         query = encrypt(query, query_key, encryption_version)
@@ -431,10 +451,12 @@ def read_key(filename, passphrase=None):
 
 def client_server_add_arguments(parser, port=9999, with_short=False):
     """Add the argparse arguments for the server.
-The optional argument port specifies the default port to use.
-If the argument with_short is given and non-False, add short
-options too; otherwise make them something less likely
-to clash with non-demo applications."""
+
+    The optional argument 'port' specifies the default port to use.
+    If the argument 'with_short' is given and non-False, add short
+    options too; otherwise make them something less likely to clash
+    with non-demo applications.
+    """
     parser.add_argument('--host', '-H' if with_short else '-SH',
                         default="127.0.0.1",
                         help="""The server to handle the query.""")
@@ -459,6 +481,7 @@ to clash with non-demo applications."""
                         Without this, replies are sent in plaintext.""")
 
 def check_private_key_privacy(args):
+    """Check that the private key pointed to really is private."""
     private_key = args.query_key if args.server else args.reply_key
     if private_key:
         key_perms = os.stat(private_key).st_mode
@@ -470,6 +493,7 @@ def check_private_key_privacy(args):
             sys.exit(1)
 
 def read_keys_from_files(args, query_passphrase, reply_passphrase):
+    """Read a pair of keys from their files."""
     return ((read_key(args.query_key, query_passphrase)
              if args.query_key and len(args.query_key) > 0
              else None),
@@ -480,26 +504,27 @@ def read_keys_from_files(args, query_passphrase, reply_passphrase):
 def client_server_main(getter, files, verbose=False):
     """Run a simple client or server.
 
-The argument `getter' is a function to be used by the server to
-process the data it gets from the client.  It should take two
-arguments, a string and a dictionary binding basenames of filenames to
-the result of the reader functions for those file (see below), and
-return the result string.
+    The argument `getter' is a function to be used by the server to
+    process the data it gets from the client.  It should take two
+    arguments, a string and a dictionary binding basenames of filenames to
+    the result of the reader functions for those file (see below), and
+    return the result string.
 
-The argument `files' is a dictionary binding filenames to functions
-for reading them.  The reading functions may be functions of two args,
-one the filename and the other a key, or a tuple of the function and
-the key, or a string, in which case it is used as the key for a
-built-in reader function using csv.DictReader, or a number, in which
-case it is used as the key for a built-in reader function using
-csv.reader.
+    The argument `files' is a dictionary binding filenames to functions
+    for reading them.  The reading functions may be functions of two args,
+    one the filename and the other a key, or a tuple of the function and
+    the key, or a string, in which case it is used as the key for a
+    built-in reader function using csv.DictReader, or a number, in which
+    case it is used as the key for a built-in reader function using
+    csv.reader.
 
-You may be able to use this directly as the main function of your
-program, but you will probably have extra pieces you need, so some
-parts of it have been split out for you to call from your own main.
+    You may be able to use this directly as the 'main' function of
+    your program, but you will probably have extra pieces you need, so
+    some parts of it have been split out for you to call from your own
+    'main'.
 
-See the documentation of the simple_data_server class, or the
-accompanying README.md, for a less terse description.
+    See the documentation of the simple_data_server class, or the
+    accompanying README.md, for a less terse description.
 
     """
     parser=argparse.ArgumentParser()
@@ -567,8 +592,11 @@ accompanying README.md, for a less terse description.
 demo_filename = "/var/local/demo/demo-main.csv"
 
 def demo_getter(in_string, files_data):
-    """A simple query program that uses the first column in the CSV file
-as the key, and returns the whole row."""
+    """A simple query program for CSV files.
+
+    It uses the first column in the CSV file as the key, and returns
+    the whole row.
+    """
     return str(files_data[os.path.basename(demo_filename)]
                .get(in_string.strip().split()[0],
                     ["Unknown"]))
