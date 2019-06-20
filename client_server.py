@@ -230,25 +230,29 @@ def null_decrypt(ciphertext, _):
     return ciphertext
 
 class UnknownEncryptionType(Exception):
-    pass
 
-encryptors = { ord('0'): null_encrypt,
-               ord('h'): hybrid_encrypt,
-               ord('H'): hybrid_encrypt_base64
+    def __init__(self, encryption_type):
+        self.encryption_type = encryption_type
+
+encryptors = {ord('0'): null_encrypt,
+              ord('p'): null_encrypt,
+              ord('h'): hybrid_encrypt,
+              ord('H'): hybrid_encrypt_base64
 }
-decryptors = { ord('0'): null_decrypt,
-               ord('h'): hybrid_decrypt,
-               ord('H'): hybrid_decrypt_base64
+decryptors = {ord('0'): null_decrypt,
+              ord('p'): null_decrypt,
+              ord('h'): hybrid_decrypt,
+              ord('H'): hybrid_decrypt_base64
 }
 
 def encrypt(plaintext, key, encryption_scheme):
     if encryption_scheme not in encryptors:
-        raise(UnknownEncryptionType)
+        raise(UnknownEncryptionType(encryption_scheme))
     return encryptors[encryption_scheme](plaintext, key)
 
 def decrypt(ciphertext, key, encryption_scheme):
     if encryption_scheme not in decryptors:
-        raise(UnknownEncryptionType)
+        raise(UnknownEncryptionType(encryption_scheme))
     return decryptors[encryption_scheme](ciphertext, key)
 
 #### Tying the query handler to the server classes ####
@@ -293,7 +297,6 @@ encryption itself.)
                        encryption_version)
 
     def process_request(this, incoming):
-        print("process_request incoming type", type(incoming))
         # I hoped I could use: bytes(incoming[:4], 'utf-8')
         (protocol_version, encryption_version, authentication_version,
          application_version) = (incoming[:4]
@@ -302,15 +305,9 @@ encryption itself.)
                                        ord(incoming[1]),
                                        ord(incoming[2]),
                                        ord(incoming[3])))
-        print("versions",
-              protocol_version,
-              encryption_version,
-              authentication_version,
-              application_version)
         incoming = incoming[4:].strip()
         if type(incoming) == bytes:
             incoming = incoming.decode('utf-8')
-            print("incoming type now", type(incoming))
         this.server.check_data_current()
         result = this.get_result(
             incoming,
@@ -320,7 +317,6 @@ encryption itself.)
             result = bytes(result, 'utf-8')
         version_data = bytes((protocol_version, encryption_version,
                               authentication_version, application_version))
-        print("process_request returning", version_data + result)
         return version_data + result
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
@@ -394,30 +390,33 @@ def get_response(query, host, port, tcp=False,
 
 This is a client suitable for the simple_data_server class.
     """
-    query = query + "\n"
     if query_key:
         query = encrypt(query, query_key, encryption_version)
     else:
         query = bytes(query, 'utf-8')
         # this tells the server to treat the data as plaintext
-        encryption_version = 0
+        encryption_version = ord('p')
     query = (bytes((protocol_version,
                     encryption_version,
                     authentication_version,
                     application_version))
              + query)
+    # Without this, it seems not to finish sending it, on tcp, which
+    # seems odd to me, as I thought tcp was a transparent byte-level
+    # protocol; perhaps it's an implementation oddity?
+    query = query + bytes("\n", 'utf-8')
     if tcp:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             sock.connect((host, int(port)))
             sock.sendall(query)
-            received = sock.recv(1024)
+            received = sock.recv(1024*8)
         finally:
             sock.close()
     else:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(query, (host, int(port)))
-        received = sock.recv(1024)
+        received = sock.recv(1024*8)
     (protocol_version, encryption_version,
      authentication_version, application_version) = received[:4]
     return decrypt(received[4:], reply_key, encryption_version)
@@ -547,11 +546,12 @@ accompanying README.md, for a less terse description.
             return None
         else:
             text = " ".join(args.data[0])
-
             received = get_response(
                 text,
                 args.host, args.port, args.tcp,
-                encryption_version=ord('H' if query_key and reply_key else '0'),
+                encryption_version=ord('H'
+                                       if query_key and reply_key
+                                       else 'p'),
                 query_key=query_key,
                 reply_key=reply_key)
 
