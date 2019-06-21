@@ -14,7 +14,13 @@ there is no logging.  These may all change in the future.
 
 As I couldn't find all the information I needed for writing a very
 simple client-server system all in one place, I've tried to make this
-code suitable for use as an example or as a base for your own code.
+code suitable for use as an example or as a base for your own code.  I
+hope it may be a useful example for:
+
+  - sockets
+  - encryption
+  - threads
+  - CSV reading
 
 However, it's years since I previously did any network programming,
 and this is my first venture into encryption and decryption, so until
@@ -37,8 +43,8 @@ and a main-like function:
 
     client_server_main(getter, files)
 
-which sets up argparse for the main options and then runs as either a
-client or a server using the functions above.
+which sets up `argparse` for the main options and then runs as either
+a client or a server using the functions above.
 
 The data definition
 -------------------
@@ -80,7 +86,7 @@ Optional encryption
 -------------------
 
 For encryption, there are some further arguments you can supply to
-`run_servers`:
+`run_servers` and `get_response`:
 
     run_servers(host, port, getter, files,
                 query_key=None,
@@ -93,12 +99,13 @@ For encryption, there are some further arguments you can supply to
 
 The `encryption_version` may be:
 
-  - `0` No encryption
-  - `1` Encryption, sent raw
-  - `2` Encryption, send with base64 encoding
+  - `p` No encryption (sent as plaintext)
+  - `H` Hybrid encryption, sent with base64 encoding
   
-If `encryption_version` is not `0`, `query_key` and `reply_key` should
-be the results of calls to `RSA.importKey`, or equivalent.
+If `encryption_version` is not `p`, `query_key` and `reply_key` should
+be the results of calls to `RSA.importKey`, or equivalent.  The
+functions `read_key` and `read_keys_from_files` are provided to help
+with this.
 
 Prerequisites
 -------------
@@ -127,7 +134,7 @@ and to run the client, use
 
 The program I started writing it as a wrapper for is for looking up
 where I have stored things at home:
-https://github.com/hillwithsmallfields/qs/blob/master/inventories/storage.py
+https://github.com/hillwithsmallfields/coimealta
 
 When I get round to learning to write Android apps, the idea is to
 have a phone or tablet use this to ask my home server where something
