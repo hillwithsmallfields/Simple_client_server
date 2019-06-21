@@ -180,6 +180,10 @@ class simple_data_server():
 
 #### encryption and decryption ####
 
+# See shorter.py for versions of these two functions with a minimum of
+# intermediate variables; shorter, but not so good for understanding
+# what's going on.
+
 def hybrid_encrypt(plaintext, asymmetric_key):
     """Encrypt the plaintext, using a randomly generated symmetric key.
 
