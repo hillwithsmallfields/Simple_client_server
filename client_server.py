@@ -238,12 +238,14 @@ class UnknownEncryptionType(Exception):
 
 encryptors = {ord('0'): null_encrypt,
               ord('p'): null_encrypt,
-              ord('h'): hybrid_encrypt, # don't expect this to work, while we still use readline
+              # don't expect this to work, while we still use readline:
+              # ord('h'): hybrid_encrypt,
               ord('H'): hybrid_encrypt_base64
 }
 decryptors = {ord('0'): null_decrypt,
               ord('p'): null_decrypt,
-              ord('h'): hybrid_decrypt, # don't expect this to work, while we still use readline
+              # don't expect this to work, while we still use readline:
+              # ord('h'): hybrid_decrypt,
               ord('H'): hybrid_decrypt_base64
 }
 
