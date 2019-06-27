@@ -43,7 +43,9 @@ import base64
 import csv
 import decouple
 import io
+import json
 import os
+import pickle
 import socket
 import socketserver
 import stat
@@ -225,13 +227,9 @@ def hybrid_decrypt_base64(ciphertext, asymmetric_key):
     """As for hybrid_decrypt but the input is base64-encoded."""
     return hybrid_decrypt(base64.b64decode(ciphertext), asymmetric_key)
 
-def null_encrypt(plaintext, _):
-    """A function for not encrypting at all."""
-    return plaintext
-
-def null_decrypt(ciphertext, _):
-    """A function for not decrypting at all."""
-    return ciphertext
+def identity_1_2(a, _):
+    """Return the first of two arguments."""
+    return a
 
 class UnknownEncryptionType(Exception):
 
@@ -240,14 +238,14 @@ class UnknownEncryptionType(Exception):
     def __init__(self, encryption_type):
         self.encryption_type = encryption_type
 
-encryptors = {ord('0'): null_encrypt,
-              ord('p'): null_encrypt,
+encryptors = {ord('0'): identity_1_2,
+              ord('p'): identity_1_2,
               # don't expect this to work, while we still use readline:
               # ord('h'): hybrid_encrypt,
               ord('H'): hybrid_encrypt_base64
 }
-decryptors = {ord('0'): null_decrypt,
-              ord('p'): null_decrypt,
+decryptors = {ord('0'): identity_1_2,
+              ord('p'): identity_1_2,
               # don't expect this to work, while we still use readline:
               # ord('h'): hybrid_decrypt,
               ord('H'): hybrid_decrypt_base64
@@ -270,6 +268,40 @@ def decrypt(ciphertext, key, encryption_scheme):
     if encryption_scheme not in decryptors:
         raise(UnknownEncryptionType(encryption_scheme))
     return decryptors[encryption_scheme](ciphertext, key)
+
+#### Data representation within the plaintext
+
+def identity_1(a):
+    """Return its argument."""
+    return a
+
+class UnknownRepresentationType(Exception):
+
+    """An exception for when the representation type requested is unsupported."""
+
+    def __init__(self, represention_type):
+        self.representation_type = representation_type
+
+dumpers = {ord('t'): identity_1,
+           ord('j'): json.dumps,
+           ord('p'): pickle.dumps
+}
+loaders = {ord('t'): identity_1,
+           ord('j'): json.loads,
+           ord('p'): pickle.loads
+}
+
+def dumps(data, representation_scheme):
+    """Convert a data structure into a transmissable form."""
+    if representation_scheme not in dumpers:
+        raise(UnknownRepresentationType(representation_scheme))
+    return dumpers[representation_scheme](data)
+
+def loads(data, representation_scheme):
+    """Convert a serialized data structure into its usable form."""
+    if representation_scheme not in loaders:
+        raise(UnknownRepresentationType(representation_scheme))
+    return loaders[representation_scheme](data)
 
 #### Tying the query handler to the server classes ####
 
@@ -296,24 +328,30 @@ class service_thread(threading.Thread):
         self._get_result = get_result
 
     def get_result(self, data_in,
-                   protocol_version=ord('0'), encryption_version=ord('0'),
-                   authentication_version=ord('0'), application_version=ord('0')):
+                   protocol_version=ord('0'), encryption_scheme=ord('p'),
+                   representation_scheme=ord('t'), application_version=ord('0')):
         """Return the result corresponding to the input argument.
 
         This calls the user-supplied get_result function, using
         encryption if specified.  (The user function doesn't handle
         any of the encryption itself.)
         """
-        return encrypt(self._get_result(decrypt(data_in,
-                                                self.server.query_key,
-                                                encryption_version),
-                                        self.server.files_data),
-                       self.server.reply_key,
-                       encryption_version)
+        return encrypt(
+            dumps(
+            self._get_result(
+                loads(
+                    decrypt(data_in,
+                            self.server.query_key,
+                            encryption_scheme),
+                    representation_scheme),
+                self.server.files_data),
+                representation_scheme),
+            self.server.reply_key,
+            encryption_scheme)
 
     def process_request(this, incoming):
         # I hoped I could use: bytes(incoming[:4], 'utf-8')
-        (protocol_version, encryption_version, authentication_version,
+        (protocol_version, encryption_scheme, representation_scheme,
          application_version) = (incoming[:4]
                                  if type(incoming) == bytes
                                  else (ord(incoming[0]),
@@ -326,12 +364,12 @@ class service_thread(threading.Thread):
         this.server.check_data_current()
         result = this.get_result(
             incoming,
-            protocol_version, encryption_version,
-            authentication_version, application_version)
+            protocol_version, encryption_scheme,
+            representation_scheme, application_version)
         if type(result) != bytes:
             result = bytes(result, 'utf-8')
-        version_data = bytes((protocol_version, encryption_version,
-                              authentication_version, application_version))
+        version_data = bytes((protocol_version, encryption_scheme,
+                              representation_scheme, application_version))
         return version_data + result
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
@@ -410,23 +448,24 @@ def run_servers(host, port, getter, files,
 def get_response(query, host, port, tcp=False,
                  query_key=None, reply_key=None,
                  protocol_version=ord('0'),
-                 encryption_version=ord('H'), # hybrid encryption with base64 encoding (see global variables `encryptors' and `decryptors')
-                 authentication_version=ord('0'),
+                 encryption_scheme=ord('H'), # hybrid encryption with base64 encoding (see global variables `encryptors' and `decryptors')
+                 representation_scheme=ord('t'),
                  application_version=ord('0')):
     """Send your query to the server, and return its result.
 
     This is the core of a client suitable for the simple_data_server
     class.
     """
+    query = loads(query, representation_scheme)
     if query_key:
-        query = encrypt(query, query_key, encryption_version)
+        query = encrypt(query, query_key, encryption_scheme)
     else:
         query = bytes(query, 'utf-8')
         # this tells the server to treat the data as plaintext
-        encryption_version = ord('p')
+        encryption_scheme = ord('p')
     query = (bytes((protocol_version,
-                    encryption_version,
-                    authentication_version,
+                    encryption_scheme,
+                    representation_scheme,
                     application_version))
              + query)
     # Without this, it seems not to finish sending it, on tcp, which
@@ -445,9 +484,10 @@ def get_response(query, host, port, tcp=False,
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(query, (host, int(port)))
         received = sock.recv(1024)
-    (protocol_version, encryption_version,
-     authentication_version, application_version) = received[:4]
-    return decrypt(received[4:], reply_key, encryption_version)
+    (protocol_version, encryption_scheme,
+     representation_scheme, application_version) = received[:4]
+    return loads(decrypt(received[4:], reply_key, encryption_scheme),
+                 representation_scheme)
 
 def read_key(filename, passphrase=None):
     """Wrap importKey with file opening, for easy use in comprehensions."""
@@ -582,9 +622,9 @@ def client_server_main(getter, files, verbose=False):
             received = get_response(
                 text,
                 args.host, args.port, args.tcp,
-                encryption_version=ord('H'
-                                       if query_key and reply_key
-                                       else 'p'),
+                encryption_scheme=ord('H'
+                                      if query_key and reply_key
+                                      else 'p'),
                 query_key=query_key,
                 reply_key=reply_key)
 
