@@ -94,18 +94,26 @@ For encryption, there are some further arguments you can supply to
 
 
     get_response(query, host, port, tcp=False,
-                 encryption_version=2,
+                 encryption_scheme=ord('H'),
+                 representation_scheme=ord('a'),
                  query_key=None, reply_key=None)
 
-The `encryption_version` may be:
+The `encryption_scheme` may be:
 
   - `p` No encryption (sent as plaintext)
   - `H` Hybrid encryption, sent with base64 encoding
   
-If `encryption_version` is not `p`, `query_key` and `reply_key` should
+If `encryption_scheme` is not `p`, `query_key` and `reply_key` should
 be the results of calls to `RSA.importKey`, or equivalent.  The
 functions `read_key` and `read_keys_from_files` are provided to help
 with this.
+
+The `representation_scheme` may be:
+
+  - 't' The input must be a text string, which is sent as such
+  - 'j' The input must be encodable as JSON
+  - 'p' The input can be any Python data that can be pickled
+  - 'a' Chooses one of the above to suit the data
 
 Prerequisites
 -------------

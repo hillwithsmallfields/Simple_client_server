@@ -19,6 +19,9 @@
 # and is biased towards reading CSV files, as that is what I wanted
 # for my original application of this.
 
+# The query and result don't have to be strings; JSON or pickle
+# serialization are available in the package.
+
 # I wrote this in this form because I couldn't find any single example
 # that did all the pieces of what I wanted.  I hope it is of
 # "exemplary" quality for people to base their programs on, but I'm
@@ -122,7 +125,7 @@ class simple_data_server():
 
     Four versioning bytes are included in the protocol, in case someone
     produces incompatible versions later.  For now, only the encryption
-    version is used.
+    scheme and serialization scheme are used.
 
     """
 
@@ -227,9 +230,13 @@ def hybrid_decrypt_base64(ciphertext, asymmetric_key):
     """As for hybrid_decrypt but the input is base64-encoded."""
     return hybrid_decrypt(base64.b64decode(ciphertext), asymmetric_key)
 
-def identity_1_2(a, _):
-    """Return the first of two arguments."""
-    return a
+def null_encrypt(plaintext, _):
+    """A function for not encrypting at all."""
+    return plaintext
+
+def null_decrypt(ciphertext, _):
+    """A function for not decrypting at all."""
+    return ciphertext
 
 class UnknownEncryptionType(Exception):
 
@@ -238,14 +245,14 @@ class UnknownEncryptionType(Exception):
     def __init__(self, encryption_type):
         self.encryption_type = encryption_type
 
-encryptors = {ord('0'): identity_1_2,
-              ord('p'): identity_1_2,
+encryptors = {ord('0'): null_encrypt,
+              ord('p'): null_encrypt,
               # don't expect this to work, while we still use readline:
               # ord('h'): hybrid_encrypt,
               ord('H'): hybrid_encrypt_base64
 }
-decryptors = {ord('0'): identity_1_2,
-              ord('p'): identity_1_2,
+decryptors = {ord('0'): null_decrypt,
+              ord('p'): null_decrypt,
               # don't expect this to work, while we still use readline:
               # ord('h'): hybrid_decrypt,
               ord('H'): hybrid_decrypt_base64
@@ -271,14 +278,46 @@ def decrypt(ciphertext, key, encryption_scheme):
 
 #### Data representation within the plaintext
 
-def text_deserializer(data):
-    return data.decode('utf-8')
+# The serializers return not only the serialized data but also the
+# serialization scheme used, so the automatic serializer can pick a
+# suitable scheme and inform its caller which one it picked.
 
 def text_serializer(data):
-    return bytes(data, 'utf-8')
+    """Serialize a string as bytes."""
+    return bytes(data, 'utf-8'), ord('t')
+
+def text_deserializer(data):
+    """Deserialize a string from bytes."""
+    return data.decode('utf-8')
+
+def json_serializer(data):
+    """Serialize data as JSON."""
+    return bytes(json.dumps(data), 'utf-8'), ord('j')
 
 def json_deserializer(data):
+    """Deserialize data from JSON."""
     return json.loads(data.decode('utf-8'))
+
+def pickle_serializer(data):
+    """Serialize data by pickling."""
+    return pickle.dumps(data), ord('p')
+
+def automatic_serializer(data):
+    """Serialize data in the most convenient way.
+    If it is a string, convert it to a bytestring.
+
+    If it can be represented in JSON, use that, as that's compatible
+    with non-Python programs at the other end.
+
+    If it can't be represented in JSON, fall back to Python's pickle
+    serialization.
+    """
+    if isinstance(data, str):
+        return text_serializer(data)
+    try:
+        return json_serializer(data)
+    except TypeError:
+        return pickle_serializer(data)
 
 class UnknownRepresentationType(Exception):
 
@@ -288,19 +327,25 @@ class UnknownRepresentationType(Exception):
         self.representation_type = representation_type
 
 serializers = {ord('t'): text_serializer,
-               ord('j'): json.dumps,
-               ord('p'): pickle.dumps
+               ord('j'): json_serializer,
+               ord('p'): pickle_serializer,
+               ord('a'): automatic_serializer
 }
 deserializers = {ord('t'): text_deserializer,
                  ord('j'): json_deserializer,
                  ord('p'): pickle.loads
 }
 
-def serialize_to_bytes(data, representation_scheme):
-    """Convert a data structure into a transmissable form."""
+def serialize_to_bytes_flexibly(data, representation_scheme):
+    """Convert a data structure into a transmissable form.
+Return the serialized data and a code for the representation used."""
     if representation_scheme not in serializers:
         raise(UnknownRepresentationType(representation_scheme))
     return serializers[representation_scheme](data)
+
+def serialize_to_bytes(data, representation_scheme):
+    result, _ = serialize_to_bytes_flexibly(data, representation_scheme)
+    return result
 
 def deserialize_from_bytes(data, representation_scheme):
     """Convert a serialized data structure into its usable form."""
@@ -453,19 +498,25 @@ def run_servers(host, port, getter, files,
 def get_response(query, host, port, tcp=False,
                  query_key=None, reply_key=None,
                  protocol_version=ord('0'),
-                 encryption_scheme=ord('H'), # hybrid encryption with base64 encoding (see global variables `encryptors' and `decryptors')
-                 representation_scheme=ord('t'),
+                 encryption_scheme=ord('H'), # hybrid encryption, b64 encoding
+                 representation_scheme=ord('a'), # auto choose serialization
                  application_version=ord('0')):
     """Send your query to the server, and return its result.
 
     This is the core of a client suitable for the simple_data_server
     class.
+
+    The input and output may be anything that the given representation
+    scheme can represent.  For 't', this is text; for 'j', anything
+    that can be represented as JSON, and for 'p', any
+    pickle-serializable Python data.
     """
-    query = serialize_to_bytes(query, representation_scheme)
+    query, representation_scheme = serialize_to_bytes_flexibly(
+        query, representation_scheme)
     if query_key:
         query = encrypt(query, query_key, encryption_scheme)
     else:
-        query = bytes(query, 'utf-8') # todo: move this functionality into the serializer
+        query = bytes(query, 'utf-8')
         # this tells the server to treat the data as plaintext
         encryption_scheme = ord('p')
     query = (bytes((protocol_version,
@@ -491,7 +542,9 @@ def get_response(query, host, port, tcp=False,
         received = sock.recv(1024)
     (protocol_version, encryption_scheme,
      representation_scheme, application_version) = received[:4]
-    return deserialize_from_bytes(decrypt(received[4:], reply_key, encryption_scheme),
+    return deserialize_from_bytes(decrypt(received[4:],
+                                          reply_key,
+                                          encryption_scheme),
                                   representation_scheme)
 
 def read_key(filename, passphrase=None):
@@ -630,7 +683,6 @@ def client_server_main(getter, files, verbose=False):
                 encryption_scheme=ord('H'
                                       if query_key and reply_key
                                       else 'p'),
-                representation_scheme=ord('t'),
                 query_key=query_key,
                 reply_key=reply_key)
 
