@@ -409,18 +409,13 @@ class service_thread(threading.Thread):
                                        ord(incoming[2]),
                                        ord(incoming[3])))
         incoming = incoming[4:].strip()
-        if type(incoming) == bytes:
-            incoming = incoming.decode('utf-8')
         this.server.check_data_current()
-        result = this.get_result(
-            incoming,
-            protocol_version, encryption_scheme,
-            representation_scheme, application_version)
-        if type(result) != bytes:
-            result = bytes(result, 'utf-8')
-        version_data = bytes((protocol_version, encryption_scheme,
-                              representation_scheme, application_version))
-        return version_data + result
+        return (bytes((protocol_version, encryption_scheme,
+                       representation_scheme, application_version))
+                + this.get_result(
+                    incoming,
+                    protocol_version, encryption_scheme,
+                    representation_scheme, application_version))
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
@@ -431,11 +426,9 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
     """
 
     def __init__(self,
-                 # service,
                  *rest):
         super().__init__(*rest)
         self.allow_reuse_address = True
-        # self.service = service
 
     def handle(self):
         """Handle a TCP request.
@@ -458,11 +451,9 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
     """
 
     def __init__(self,
-                 # service,
                  *rest):
         super().__init__(*rest)
         self.allow_reuse_address = True
-        # self.service = service
 
     def handle(self):
         """Handle a UDP request.
@@ -489,11 +480,10 @@ def run_servers(host, port, getter, files,
     They each apply the getter argument to the incoming queries, using
     the specified files.
     """
-    my_server = simple_data_server(
-        host, port,
-        getter, files,
-        query_key=query_key, reply_key=reply_key)
-    my_server.start()
+    simple_data_server(host, port,
+                       getter, files,
+                       query_key=query_key,
+                       reply_key=reply_key).start()
 
 def get_response(query, host, port, tcp=False,
                  query_key=None, reply_key=None,
@@ -516,18 +506,14 @@ def get_response(query, host, port, tcp=False,
     if query_key:
         query = encrypt(query, query_key, encryption_scheme)
     else:
-        query = bytes(query, 'utf-8')
-        # this tells the server to treat the data as plaintext
         encryption_scheme = ord('p')
     query = (bytes((protocol_version,
                     encryption_scheme,
                     representation_scheme,
                     application_version))
-             + query)
-    # Without this, it seems not to finish sending it, on tcp, which
-    # seems odd to me, as I thought tcp was a transparent byte-level
-    # protocol; perhaps it's an implementation oddity?
-    query = query + bytes("\n", 'utf-8')
+             + query
+             # because we use readline:
+             + bytes("\n", 'utf-8'))
     if tcp:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
