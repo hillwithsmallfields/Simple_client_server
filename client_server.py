@@ -114,7 +114,7 @@ class simple_data_server():
       - a dictionary binding the basename of each filename to the data
         read from that file
 
-    It should return the string to send back over TCP or UDP.
+    It should return the data to send back over TCP or UDP.
 
     The servers are represented as the threads that hold them, and the
     threads hold the query function, for reasons explained in the
