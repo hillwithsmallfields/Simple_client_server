@@ -80,6 +80,11 @@ def read_csv_as_lists(filename, keycolumn=0):
         return {row[keycolumn]: row
                 for row in csv.reader(instream)}
 
+def read_json(filename, _):
+    """Read a JSON file."""
+    with io.open(filename, 'r', encoding='utf-8') as instream:
+        return json.load(instream)
+
 class simple_data_server():
 
     """A pair of TCP and UDP servers for accessing data from some files.
@@ -109,6 +114,8 @@ class simple_data_server():
 
       - a tuple of a function and a value to pass as the second argument of
         the function, the first argument being the filename
+
+      - None, meaning to read the file as JSON
 
     The query function is called with two arguments:
 
@@ -168,7 +175,10 @@ class simple_data_server():
             now_timestamp = os.path.getctime(filename)
             if now_timestamp > timestamp:
                 reader = self.files_readers.get(filename, None)
-                if isinstance(reader, str):
+                if reader is None:
+                    reader = read_json
+                    key = None
+                elif isinstance(reader, str):
                     key = reader
                     reader = read_csv_as_dicts
                 elif isinstance(reader, int):
@@ -606,7 +616,7 @@ def client_server_main(getter, files, verbose=False):
     the key, or a string, in which case it is used as the key for a
     built-in reader function using csv.DictReader, or a number, in which
     case it is used as the key for a built-in reader function using
-    csv.reader.
+    csv.reader, or None, in which case the file is read as JSON.
 
     You may be able to use this directly as the 'main' function of
     your program, but you will probably have extra pieces you need, so
