@@ -217,7 +217,7 @@ def hybrid_decrypt(ciphertext, asymmetric_key):
     symmetric_key = symmetric_key_and_iv[AES.block_size:]
     cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
     decrypted_data = cipher.decrypt(symmetrically_encrypted_payload)
-    return decrypted_data[16:].decode()
+    return decrypted_data[16:]
 
 def hybrid_encrypt_base64(plaintext, asymmetric_key):
     """As for hybrid_encrypt but the output is base64-encoded."""
@@ -271,9 +271,14 @@ def decrypt(ciphertext, key, encryption_scheme):
 
 #### Data representation within the plaintext
 
-def identity_1(a):
-    """Return its argument."""
-    return a
+def text_deserializer(data):
+    return data.decode('utf-8')
+
+def text_serializer(data):
+    return bytes(data, 'utf-8')
+
+def json_deserializer(data):
+    return json.loads(data.decode('utf-8'))
 
 class UnknownRepresentationType(Exception):
 
@@ -282,13 +287,12 @@ class UnknownRepresentationType(Exception):
     def __init__(self, represention_type):
         self.representation_type = representation_type
 
-serializers = {ord('t'): identity_1, # todo: make this convert strings to bytes
+serializers = {ord('t'): text_serializer,
                ord('j'): json.dumps,
                ord('p'): pickle.dumps
-               # todo: add automatic serializer
 }
-deserializers = {ord('t'): identity_1, # todo: make this convert bytevectors to strings
-                 ord('j'): json.loads,
+deserializers = {ord('t'): text_deserializer,
+                 ord('j'): json_deserializer,
                  ord('p'): pickle.loads
 }
 
@@ -626,6 +630,7 @@ def client_server_main(getter, files, verbose=False):
                 encryption_scheme=ord('H'
                                       if query_key and reply_key
                                       else 'p'),
+                representation_scheme=ord('t'),
                 query_key=query_key,
                 reply_key=reply_key)
 
