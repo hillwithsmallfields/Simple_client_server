@@ -282,26 +282,27 @@ class UnknownRepresentationType(Exception):
     def __init__(self, represention_type):
         self.representation_type = representation_type
 
-dumpers = {ord('t'): identity_1,
-           ord('j'): json.dumps,
-           ord('p'): pickle.dumps
+serializers = {ord('t'): identity_1, # todo: make this convert strings to bytes
+               ord('j'): json.dumps,
+               ord('p'): pickle.dumps
+               # todo: add automatic serializer
 }
-loaders = {ord('t'): identity_1,
-           ord('j'): json.loads,
-           ord('p'): pickle.loads
+deserializers = {ord('t'): identity_1, # todo: make this convert bytevectors to strings
+                 ord('j'): json.loads,
+                 ord('p'): pickle.loads
 }
 
-def dumps(data, representation_scheme):
+def serialize_to_bytes(data, representation_scheme):
     """Convert a data structure into a transmissable form."""
-    if representation_scheme not in dumpers:
+    if representation_scheme not in serializers:
         raise(UnknownRepresentationType(representation_scheme))
-    return dumpers[representation_scheme](data)
+    return serializers[representation_scheme](data)
 
-def loads(data, representation_scheme):
+def deserialize_from_bytes(data, representation_scheme):
     """Convert a serialized data structure into its usable form."""
-    if representation_scheme not in loaders:
+    if representation_scheme not in deserializers:
         raise(UnknownRepresentationType(representation_scheme))
-    return loaders[representation_scheme](data)
+    return deserializers[representation_scheme](data)
 
 #### Tying the query handler to the server classes ####
 
@@ -337,14 +338,14 @@ class service_thread(threading.Thread):
         any of the encryption itself.)
         """
         return encrypt(
-            dumps(
-            self._get_result(
-                loads(
-                    decrypt(data_in,
-                            self.server.query_key,
-                            encryption_scheme),
-                    representation_scheme),
-                self.server.files_data),
+            serialize_to_bytes(
+                self._get_result(
+                    deserialize_from_bytes(
+                        decrypt(data_in,
+                                self.server.query_key,
+                                encryption_scheme),
+                        representation_scheme),
+                    self.server.files_data),
                 representation_scheme),
             self.server.reply_key,
             encryption_scheme)
@@ -456,11 +457,11 @@ def get_response(query, host, port, tcp=False,
     This is the core of a client suitable for the simple_data_server
     class.
     """
-    query = loads(query, representation_scheme)
+    query = serialize_to_bytes(query, representation_scheme)
     if query_key:
         query = encrypt(query, query_key, encryption_scheme)
     else:
-        query = bytes(query, 'utf-8')
+        query = bytes(query, 'utf-8') # todo: move this functionality into the serializer
         # this tells the server to treat the data as plaintext
         encryption_scheme = ord('p')
     query = (bytes((protocol_version,
@@ -486,8 +487,8 @@ def get_response(query, host, port, tcp=False,
         received = sock.recv(1024)
     (protocol_version, encryption_scheme,
      representation_scheme, application_version) = received[:4]
-    return loads(decrypt(received[4:], reply_key, encryption_scheme),
-                 representation_scheme)
+    return deserialize_from_bytes(decrypt(received[4:], reply_key, encryption_scheme),
+                                  representation_scheme)
 
 def read_key(filename, passphrase=None):
     """Wrap importKey with file opening, for easy use in comprehensions."""
