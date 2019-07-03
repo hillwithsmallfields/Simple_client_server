@@ -1,0 +1,5 @@
+#!/bin/bash
+export PYTHONPATH=$PYTHONPATH:$OPEN_PROJECTS/JCGS_py_server/
+./test_client_server.py --server &
+sleep 4
+./test_client_server.py $*
