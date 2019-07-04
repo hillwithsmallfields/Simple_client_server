@@ -1,0 +1,9 @@
+{
+    "aubergine": ["vegetable","purple"],
+    "cabbage": ["vegetable","green"],
+    "chicken": ["meat","white"],
+    "lamb": ["meat","red"],
+    "orange": ["fruit","orange"],
+    "spinach": ["vegetable","green"],
+    "tomato": ["fruit","red"]
+}
