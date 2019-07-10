@@ -472,7 +472,9 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
         self.wfile.write(
             get_server().process_request(
                 # This probably shouldn't be a readline, but I'm not
-                # sure how else to decide that we've read the lot
+                # sure how else to decide that we've read the lot when
+                # using TCP.  Since we are b64-encoding the query,
+                # it's safe for us to put a newline at the end of it.
                 self.rfile.readline().strip().decode('utf-8')))
 
 class MyUDPHandler(socketserver.BaseRequestHandler):

@@ -1,5 +1,5 @@
 #!/bin/bash
 export PYTHONPATH=$PYTHONPATH:$OPEN_PROJECTS/JCGS_py_server/
 ./test_client_server.py --server &
-sleep 4
+sleep 2                         # give the server time to start
 ./test_client_server.py $*
