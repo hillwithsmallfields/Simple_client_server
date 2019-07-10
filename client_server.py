@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 # A simple socket-based client and server program, with optional
-# encryption, deliberately avoiding the complexity and overhead of
-# SSL/TLS, for adapting for your particular needs.
+# encryption and serialization, deliberately avoiding the complexity
+# and overhead of SSL/TLS, for adapting for your particular needs.
 
 # It can run as either the client or the server, and can use either
 # UDP or TCP.  As a client, it sends a request to the server and waits
@@ -17,7 +17,8 @@
 
 # The data-handling part handles re-reading files when they change,
 # and is biased towards reading CSV files, as that is what I wanted
-# for my original application of this.
+# for my original application of this; it also handles JSON files, or
+# you can provide your own function to read anything you like.
 
 # The query and result don't have to be strings; JSON or pickle
 # serialization are available in the package.
@@ -37,7 +38,7 @@
 # asset tag barcode (yes, I'm that nerdy) on something I'm holding,
 # and tell me which box or shelf I should return it to.
 
-# See:
+# For the smaller examples I built this from, see:
 # - https://docs.python.org/3.2/library/socketserver.html
 # - https://stackoverflow.com/questions/28426102/python-crypto-rsa-public-private-key-with-large-file/28427259
 
@@ -117,7 +118,7 @@ class simple_data_server():
 
       - None, meaning to read the file as JSON
 
-    The query function is called with two arguments:
+    The user-supplied query function is called with two arguments:
 
       - the data from the TCP or UDP input
 
@@ -126,9 +127,19 @@ class simple_data_server():
 
     It should return the data to send back over TCP or UDP.
 
-    The servers are represented as the threads that hold them, and the
-    threads hold the query function, for reasons explained in the
-    docstring of the `service_thread' class.
+    The user function can call:
+
+        get_server.().set_reply_key(filename, passphrase)
+
+    to change the key used for the reply.  Leaving this to the user
+    function allows the application to have its own way of allowing
+    multiple users; for example, if JSON serialization is used, it
+    could be a field in the dictionary holding the query.
+
+    The servers are accessed via the threads that hold them, and the
+    server structure attached to the threads holds the query function,
+    for reasons explained in the docstring of the `service_thread'
+    class.
 
     Four versioning bytes are included in the protocol, in case someone
     produces incompatible versions later.  For now, only the encryption
@@ -138,18 +149,21 @@ class simple_data_server():
 
     def __init__(self,
                  host, port,
-                 get_result, files,
+                 user_get_result, files,
                  query_key=None, reply_key=None):
         # Network
         self.host = host
         self.port = port
         # Data
         self.files_readers = files
+        # Set the "time last read" for each file to the epoch, so that
+        # the data will be read the first time check_data_current is
+        # called:
         self.files_timestamps = {filename: 0
                                  for filename in files.keys()}
         self.files_data = {os.path.basename(filename): None
                            for filename in files.keys()}
-        self.user_get_result = get_result
+        self.user_get_result = user_get_result
         # Encryption
         self.query_key = query_key
         self.reply_key = reply_key
@@ -425,8 +439,8 @@ class service_thread(threading.Thread):
     are classes rather than class instances, so, as the instantiation
     of them is done out of our control, we can't pass in a query
     function argument.  However, in our query handler, we can find
-    what the current thread is, so we use the thread (this class) as
-    somewhere to store the function.
+    what the current thread is, so we use the server attached to that
+    thread (this class) as somewhere to store the function.
     """
 
     def __init__(self,
