@@ -193,6 +193,18 @@ class simple_data_server():
                                                                      key)
                 self.files_timestamps[filename] = now_timestamp
 
+    def set_reply_key(self, key_filename, key_passphrase):
+        """Select the key to be used for the reply.
+        Use as:
+        get_server().set_reply_key(filename, passphrase)
+        from within your get_result function.
+        """
+        self.reply_key = read_key(key_filename, key_passphrase)
+
+def get_server():
+    """Return the server under which you are running."""
+    return threading.current_thread().server
+
 #### encryption and decryption ####
 
 # See shorter.py for versions of these two functions with a minimum of
@@ -387,6 +399,7 @@ class service_thread(threading.Thread):
         self.server = server
         self._get_result = get_result
 
+    # todo: move to server class
     def get_result(self, data_in,
                    protocol_version=ord('0'), encryption_scheme=ord('p'),
                    representation_scheme=ord('t'), application_version=ord('0')):
@@ -409,6 +422,7 @@ class service_thread(threading.Thread):
             self.server.reply_key,
             encryption_scheme)
 
+    # todo: move to server class
     def process_request(self, incoming):
         # I hoped I could use: bytes(incoming[:4], 'utf-8')
         (protocol_version, encryption_scheme, representation_scheme,
