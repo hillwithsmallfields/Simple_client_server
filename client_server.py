@@ -409,7 +409,7 @@ class service_thread(threading.Thread):
             self.server.reply_key,
             encryption_scheme)
 
-    def process_request(this, incoming):
+    def process_request(self, incoming):
         # I hoped I could use: bytes(incoming[:4], 'utf-8')
         (protocol_version, encryption_scheme, representation_scheme,
          application_version) = (incoming[:4]
@@ -419,10 +419,10 @@ class service_thread(threading.Thread):
                                        ord(incoming[2]),
                                        ord(incoming[3])))
         incoming = incoming[4:].strip()
-        this.server.check_data_current()
+        self.server.check_data_current()
         return (bytes((protocol_version, encryption_scheme,
                        representation_scheme, application_version))
-                + this.get_result(
+                + self.get_result(
                     incoming,
                     protocol_version, encryption_scheme,
                     representation_scheme, application_version))
