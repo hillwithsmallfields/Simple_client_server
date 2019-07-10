@@ -149,6 +149,7 @@ class simple_data_server():
                                  for filename in files.keys()}
         self.files_data = {os.path.basename(filename): None
                            for filename in files.keys()}
+        self.user_get_result = get_result
         # Encryption
         self.query_key = query_key
         self.reply_key = reply_key
@@ -156,13 +157,11 @@ class simple_data_server():
         self.udp_server=service_thread(
             args=[socketserver.UDPServer((self.host, self.port),
                                          MyUDPHandler)],
-            server=self,
-            get_result=get_result)
+            server=self)
         self.tcp_server = service_thread(
             args=[socketserver.TCPServer((self.host, self.port),
                                          MyTCPHandler)],
-            server=self,
-            get_result=get_result)
+            server=self)
 
     def start(self):
         """Start the server threads."""
@@ -192,6 +191,46 @@ class simple_data_server():
                 self.files_data[os.path.basename(filename)] = reader(filename,
                                                                      key)
                 self.files_timestamps[filename] = now_timestamp
+
+    def get_result(self, data_in,
+                   protocol_version=ord('0'), encryption_scheme=ord('p'),
+                   representation_scheme=ord('t'), application_version=ord('0')):
+        """Return the result corresponding to the input argument.
+
+        This calls the user-supplied get_result function, using
+        encryption if specified.  (The user function doesn't handle
+        any of the encryption itself.)
+        """
+        return encrypt(
+            serialize_to_bytes(
+                self.user_get_result(
+                    deserialize_from_bytes(
+                        decrypt(data_in,
+                                self.query_key,
+                                encryption_scheme),
+                        representation_scheme),
+                    self.files_data),
+                representation_scheme),
+            self.reply_key,
+            encryption_scheme)
+
+    def process_request(self, incoming):
+        # I hoped I could use: bytes(incoming[:4], 'utf-8')
+        (protocol_version, encryption_scheme, representation_scheme,
+         application_version) = (incoming[:4]
+                                 if type(incoming) == bytes
+                                 else (ord(incoming[0]),
+                                       ord(incoming[1]),
+                                       ord(incoming[2]),
+                                       ord(incoming[3])))
+        incoming = incoming[4:].strip()
+        self.check_data_current()
+        return (bytes((protocol_version, encryption_scheme,
+                       representation_scheme, application_version))
+                + self.get_result(
+                    incoming,
+                    protocol_version, encryption_scheme,
+                    representation_scheme, application_version))
 
     def set_reply_key(self, key_filename, key_passphrase):
         """Select the key to be used for the reply.
@@ -392,54 +431,10 @@ class service_thread(threading.Thread):
 
     def __init__(self,
                  server,
-                 get_result,
                  **rest):
         super().__init__(target=run_server,
                          **rest)
         self.server = server
-        self._get_result = get_result
-
-    # todo: move to server class
-    def get_result(self, data_in,
-                   protocol_version=ord('0'), encryption_scheme=ord('p'),
-                   representation_scheme=ord('t'), application_version=ord('0')):
-        """Return the result corresponding to the input argument.
-
-        This calls the user-supplied get_result function, using
-        encryption if specified.  (The user function doesn't handle
-        any of the encryption itself.)
-        """
-        return encrypt(
-            serialize_to_bytes(
-                self._get_result(
-                    deserialize_from_bytes(
-                        decrypt(data_in,
-                                self.server.query_key,
-                                encryption_scheme),
-                        representation_scheme),
-                    self.server.files_data),
-                representation_scheme),
-            self.server.reply_key,
-            encryption_scheme)
-
-    # todo: move to server class
-    def process_request(self, incoming):
-        # I hoped I could use: bytes(incoming[:4], 'utf-8')
-        (protocol_version, encryption_scheme, representation_scheme,
-         application_version) = (incoming[:4]
-                                 if type(incoming) == bytes
-                                 else (ord(incoming[0]),
-                                       ord(incoming[1]),
-                                       ord(incoming[2]),
-                                       ord(incoming[3])))
-        incoming = incoming[4:].strip()
-        self.server.check_data_current()
-        return (bytes((protocol_version, encryption_scheme,
-                       representation_scheme, application_version))
-                + self.get_result(
-                    incoming,
-                    protocol_version, encryption_scheme,
-                    representation_scheme, application_version))
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
@@ -461,7 +456,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
         input to the output.
         """
         self.wfile.write(
-            threading.current_thread().process_request(
+            get_server().process_request(
                 # This probably shouldn't be a readline, but I'm not
                 # sure how else to decide that we've read the lot
                 self.rfile.readline().strip().decode('utf-8')))
@@ -487,7 +482,7 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
         """
         reply_socket = self.request[1]
         reply_socket.sendto(
-            threading.current_thread().process_request(
+            get_server().process_request(
                 self.request[0]),
             self.client_address)
 
