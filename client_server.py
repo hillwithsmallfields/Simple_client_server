@@ -59,7 +59,10 @@ from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
 from Crypto import Random
 
-#### Handling the underlying data ####
+################################
+# Handling the underlying data #
+################################
+
 
 def read_csv_as_dicts(filename, keyfield='Name'):
     """Read a CSV file, producing a dictionary for each row.
@@ -71,6 +74,7 @@ def read_csv_as_dicts(filename, keyfield='Name'):
         return {row[keyfield]: row
                 for row in csv.DictReader(instream)}
 
+
 def read_csv_as_lists(filename, keycolumn=0):
     """Read a CSV file, producing a list for each row.
 
@@ -81,10 +85,12 @@ def read_csv_as_lists(filename, keycolumn=0):
         return {row[keycolumn]: row
                 for row in csv.reader(instream)}
 
+
 def read_json(filename, _):
     """Read a JSON file."""
     with io.open(filename, 'r', encoding='utf-8') as instream:
         return json.load(instream)
+
 
 class simple_data_server():
 
@@ -129,7 +135,7 @@ class simple_data_server():
 
     The user function can call:
 
-        get_server.().set_reply_key(filename, passphrase)
+        get_server().set_reply_key(filename, passphrase)
 
     to change the key used for the reply.  Leaving this to the user
     function allows the application to have its own way of allowing
@@ -168,7 +174,7 @@ class simple_data_server():
         self.query_key = query_key
         self.reply_key = reply_key
         # The service threads
-        self.udp_server=service_thread(
+        self.udp_server = service_thread(
             args=[socketserver.UDPServer((self.host, self.port),
                                          MyUDPHandler)],
             server=self)
@@ -207,8 +213,10 @@ class simple_data_server():
                 self.files_timestamps[filename] = now_timestamp
 
     def get_result(self, data_in,
-                   protocol_version=ord('0'), encryption_scheme=ord('p'),
-                   representation_scheme=ord('t'), application_version=ord('0')):
+                   protocol_version=ord('0'),
+                   encryption_scheme=ord('p'),
+                   representation_scheme=ord('t'),
+                   application_version=ord('0')):
         """Return the result corresponding to the input argument.
 
         This calls the user-supplied get_result function, using
@@ -254,15 +262,19 @@ class simple_data_server():
         """
         self.reply_key = read_key(key_filename, key_passphrase)
 
+
 def get_server():
     """Return the server under which you are running."""
     return threading.current_thread().server
 
-#### encryption and decryption ####
+#############################
+# encryption and decryption #
+#############################
 
 # See shorter.py for versions of these two functions with a minimum of
 # intermediate variables; shorter, but not so good for understanding
 # what's going on.
+
 
 def hybrid_encrypt(plaintext, asymmetric_key):
     """Encrypt the plaintext, using a randomly generated symmetric key.
@@ -281,6 +293,7 @@ def hybrid_encrypt(plaintext, asymmetric_key):
     return (asymmetrically_encrypted_symmetric_iv_and_key
             + symmetrically_encrypted_payload)
 
+
 def hybrid_decrypt(ciphertext, asymmetric_key):
     """Use the asymmetric key to decrypt a symmetric key.
 
@@ -297,21 +310,26 @@ def hybrid_decrypt(ciphertext, asymmetric_key):
     decrypted_data = cipher.decrypt(symmetrically_encrypted_payload)
     return decrypted_data[16:]
 
+
 def hybrid_encrypt_base64(plaintext, asymmetric_key):
     """As for hybrid_encrypt but the output is base64-encoded."""
     return base64.b64encode(hybrid_encrypt(plaintext, asymmetric_key))
+
 
 def hybrid_decrypt_base64(ciphertext, asymmetric_key):
     """As for hybrid_decrypt but the input is base64-encoded."""
     return hybrid_decrypt(base64.b64decode(ciphertext), asymmetric_key)
 
+
 def null_encrypt(plaintext, _):
     """A function for not encrypting at all."""
     return plaintext
 
+
 def null_decrypt(ciphertext, _):
     """A function for not decrypting at all."""
     return ciphertext
+
 
 class UnknownEncryptionType(Exception):
 
@@ -320,18 +338,20 @@ class UnknownEncryptionType(Exception):
     def __init__(self, encryption_type):
         self.encryption_type = encryption_type
 
+
 encryptors = {ord('0'): null_encrypt,
               ord('p'): null_encrypt,
               # don't expect this to work, while we still use readline:
               # ord('h'): hybrid_encrypt,
               ord('H'): hybrid_encrypt_base64
-}
+              }
 decryptors = {ord('0'): null_decrypt,
               ord('p'): null_decrypt,
               # don't expect this to work, while we still use readline:
               # ord('h'): hybrid_decrypt,
               ord('H'): hybrid_decrypt_base64
-}
+              }
+
 
 def encrypt(plaintext, key, encryption_scheme):
     """Encrypt plaintext with a key in a specified way.
@@ -342,6 +362,7 @@ def encrypt(plaintext, key, encryption_scheme):
         raise(UnknownEncryptionType(encryption_scheme))
     return encryptors[encryption_scheme](plaintext, key)
 
+
 def decrypt(ciphertext, key, encryption_scheme):
     """Decrypt ciphertext with a key in a specified way.
 
@@ -351,31 +372,39 @@ def decrypt(ciphertext, key, encryption_scheme):
         raise(UnknownEncryptionType(encryption_scheme))
     return decryptors[encryption_scheme](ciphertext, key)
 
-#### Data representation within the plaintext
+############################################
+# Data representation within the plaintext #
+############################################
 
 # The serializers return not only the serialized data but also the
 # serialization scheme used, so the automatic serializer can pick a
 # suitable scheme and inform its caller which one it picked.
 
+
 def text_serializer(data):
     """Serialize a string as bytes."""
     return bytes(data, 'utf-8'), ord('t')
+
 
 def text_deserializer(data):
     """Deserialize a string from bytes."""
     return data.decode('utf-8')
 
+
 def json_serializer(data):
     """Serialize data as JSON."""
     return bytes(json.dumps(data), 'utf-8'), ord('j')
+
 
 def json_deserializer(data):
     """Deserialize data from JSON."""
     return json.loads(data.decode('utf-8'))
 
+
 def pickle_serializer(data):
     """Serialize data by pickling."""
     return pickle.dumps(data), ord('p')
+
 
 def automatic_serializer(data):
     """Serialize data in the most convenient way.
@@ -394,22 +423,25 @@ def automatic_serializer(data):
     except TypeError:
         return pickle_serializer(data)
 
+
 class UnknownRepresentationType(Exception):
 
-    """An exception for when the representation type requested is unsupported."""
+    """An exception for unsupported representation types."""
 
     def __init__(self, represention_type):
         self.representation_type = representation_type
+
 
 serializers = {ord('t'): text_serializer,
                ord('j'): json_serializer,
                ord('p'): pickle_serializer,
                ord('a'): automatic_serializer
-}
+               }
 deserializers = {ord('t'): text_deserializer,
                  ord('j'): json_deserializer,
                  ord('p'): pickle.loads
-}
+                 }
+
 
 def serialize_to_bytes_flexibly(data, representation_scheme):
     """Convert a data structure into a transmissable form.
@@ -418,9 +450,11 @@ Return the serialized data and a code for the representation used."""
         raise(UnknownRepresentationType(representation_scheme))
     return serializers[representation_scheme](data)
 
+
 def serialize_to_bytes(data, representation_scheme):
     result, _ = serialize_to_bytes_flexibly(data, representation_scheme)
     return result
+
 
 def deserialize_from_bytes(data, representation_scheme):
     """Convert a serialized data structure into its usable form."""
@@ -428,7 +462,10 @@ def deserialize_from_bytes(data, representation_scheme):
         raise(UnknownRepresentationType(representation_scheme))
     return deserializers[representation_scheme](data)
 
-#### Tying the query handler to the server classes ####
+#################################################
+# Tying the query handler to the server classes #
+#################################################
+
 
 class service_thread(threading.Thread):
 
@@ -449,6 +486,7 @@ class service_thread(threading.Thread):
         super().__init__(target=run_server,
                          **rest)
         self.server = server
+
 
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
@@ -477,6 +515,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                 # it's safe for us to put a newline at the end of it.
                 self.rfile.readline().strip().decode('utf-8')))
 
+
 class MyUDPHandler(socketserver.BaseRequestHandler):
 
     """The UDP handler for the simple_data_server class.
@@ -502,10 +541,14 @@ class MyUDPHandler(socketserver.BaseRequestHandler):
                 self.request[0]),
             self.client_address)
 
-#### High-level functions ####
+########################
+# High-level functions #
+########################
+
 
 def run_server(server):
     server.serve_forever()
+
 
 def run_servers(host, port, getter, files,
                 query_key=None,
@@ -520,11 +563,12 @@ def run_servers(host, port, getter, files,
                        query_key=query_key,
                        reply_key=reply_key).start()
 
+
 def get_response(query, host, port, tcp=False,
                  query_key=None, reply_key=None,
                  protocol_version=ord('0'),
-                 encryption_scheme=ord('H'), # hybrid encryption, b64 encoding
-                 representation_scheme=ord('a'), # auto choose serialization
+                 encryption_scheme=ord('H'),  # hybrid encryption, b64 encoding
+                 representation_scheme=ord('a'),  # auto choose serialization
                  application_version=ord('0')):
     """Send your query to the server, and return its result.
 
@@ -568,11 +612,13 @@ def get_response(query, host, port, tcp=False,
                                           encryption_scheme),
                                   representation_scheme)
 
+
 def read_key(filename, passphrase=None):
     """Wrap importKey with file opening, for easy use in comprehensions."""
     with open(filename) as reply_stream:
         return RSA.importKey(reply_stream.read(),
                              passphrase=passphrase)
+
 
 def client_server_add_arguments(parser, port=9999, with_short=False):
     """Add the argparse arguments for the server.
@@ -605,6 +651,7 @@ def client_server_add_arguments(parser, port=9999, with_short=False):
                         to everyone except the server user.
                         Without this, replies are sent in plaintext.""")
 
+
 def check_private_key_privacy(args):
     """Check that the private key pointed to really is private."""
     private_key = args.query_key if args.server else args.reply_key
@@ -617,6 +664,7 @@ def check_private_key_privacy(args):
             print("Key file", private_key, "is open to misuse.")
             sys.exit(1)
 
+
 def read_keys_from_files(args, query_passphrase, reply_passphrase):
     """Read a pair of keys from their files."""
     return ((read_key(args.query_key, query_passphrase)
@@ -625,6 +673,7 @@ def read_keys_from_files(args, query_passphrase, reply_passphrase):
             (read_key(args.reply_key, reply_passphrase)
              if args.reply_key and len(args.reply_key) > 0
              else None))
+
 
 def client_server_main(getter, files, verbose=False):
     """Run a simple client or server.
@@ -652,7 +701,7 @@ def client_server_main(getter, files, verbose=False):
     accompanying README.md, for a less terse description.
 
     """
-    parser=argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()
     parser.add_argument("--gen-key",
                         help="""Generate a key in the specified file, and its
                         associated public key in that name + '.pub'.
@@ -669,7 +718,7 @@ def client_server_main(getter, files, verbose=False):
     parser.add_argument('data', nargs='*', action='append',
                         help="""The data to send to the server.""")
     client_server_add_arguments(parser)
-    args=parser.parse_args()
+    args = parser.parse_args()
     query_passphrase = decouple.config('query_passphrase')
     reply_passphrase = decouple.config('reply_passphrase')
     if args.gen_key:
@@ -712,9 +761,13 @@ def client_server_main(getter, files, verbose=False):
                 print("Received: {}".format(received))
             return received
 
-#### Example ####
+###########
+# Example #
+###########
+
 
 demo_filename = "/var/local/demo/demo-main.csv"
+
 
 def demo_getter(in_string, files_data):
     """A simple query program for CSV files.
@@ -726,10 +779,12 @@ def demo_getter(in_string, files_data):
                .get(in_string.strip().split()[0],
                     ["Unknown"]))
 
+
 def main():
     client_server_main(demo_getter,
                        {demo_filename: 0},
                        verbose=True)
+
 
 if __name__ == "__main__":
     main()
