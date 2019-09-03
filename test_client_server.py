@@ -65,17 +65,25 @@ def run_test_queries(text, args, csv_0_port, csv_name_port, json_port, query_key
     print("Sent:     {}".format(text))
     print("Received: {}".format(received))
 
-    print("Sending json query with", "tcp" if use_tcp else "udp")
-    received = client_server.get_response(
-        text,
-        args.host, json_port, use_tcp,
-        encryption_scheme=ord('H'
-                              if query_key and reply_key
-                              else 'p'),
-        query_key=query_key,
-        reply_key=reply_key)
-    print("Sent:     {}".format(text))
-    print("Received: {}".format(received), "of type", type(received))
+    if json_port:
+        print("Sending json query with", "tcp" if use_tcp else "udp")
+        received = client_server.get_response(
+            text,
+            args.host, json_port, use_tcp,
+            encryption_scheme=ord('H'
+                                  if query_key and reply_key
+                                  else 'p'),
+            query_key=query_key,
+            reply_key=reply_key)
+        print("Sent:     {}".format(text))
+        print("Received: {}".format(received), "of type", type(received))
+
+def modify_dict_row(row):
+    row.update({'description': row['colour']+' '+row['name']})
+    return row
+
+def modify_list_row(row):
+    return [row[2]+' '+row[0]] + row
 
 def main():
     parser=argparse.ArgumentParser()
@@ -96,10 +104,14 @@ def main():
 
     csv_0_port = int(args.port)
     csv_name_port = csv_0_port + 1
-    json_port = csv_name_port + 1
+    csv_0_processed_port = csv_name_port + 1
+    csv_name_processed_port = csv_0_processed_port + 1
+    json_port = csv_name_processed_port + 1
     files = {"demo-main.csv": 0,
              "demo-main-headed.csv": "name",
              "demo-main.json": None}
+    processed_files = {"demo-main.csv": (0, modify_list_row),
+                       "demo-main-headed.csv": ("name", modify_dict_row)}
 
     if args.server:
         print("starting csv_0 server")
@@ -114,7 +126,19 @@ def main():
                                   files=files,
                                   query_key=query_key,
                                   reply_key=reply_key)
-        print("started csv_name server; starting json server")
+        print("started csv_name server; starting csv_0_processed server")
+        client_server.run_servers(args.host, csv_0_processed_port,
+                                  getter=demo_getter_csv_0,
+                                  files=processed_files,
+                                  query_key=query_key,
+                                  reply_key=reply_key)
+        print("started csv_0_processed server; starting csv_name_processed server")
+        client_server.run_servers(args.host, csv_name_processed_port,
+                                  getter=demo_getter_csv_name,
+                                  files=processed_files,
+                                  query_key=query_key,
+                                  reply_key=reply_key)
+        print("started csv_name_processed server; starting json server")
         client_server.run_servers(args.host, json_port,
                                   getter=demo_getter_json,
                                   files=files,
@@ -128,7 +152,9 @@ def main():
         print("query text is", text)
 
         run_test_queries(text, args, csv_0_port, csv_name_port, json_port, query_key, reply_key, files, False)
+        run_test_queries(text, args, csv_0_processed_port, csv_name_processed_port, None, query_key, reply_key, files, False)
         run_test_queries(text, args, csv_0_port, csv_name_port, json_port, query_key, reply_key, files, True)
+        run_test_queries(text, args, csv_0_port, csv_name_port, None, query_key, reply_key, files, True)
 
 if __name__ == "__main__":
     main()

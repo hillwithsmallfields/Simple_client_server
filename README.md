@@ -103,7 +103,6 @@ For encryption, there are some further arguments you can supply to
                 query_key=None,
                 reply_key=None)
 
-
     get_response(query, host, port, tcp=False,
                  encryption_scheme=ord('H'),
                  representation_scheme=ord('a'),

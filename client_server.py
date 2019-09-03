@@ -66,7 +66,7 @@ from Crypto import Random
 def identity(x):
     return x
 
-def read_csv_as_dicts(filename, keyfield='Name', row_modifier=identity):
+def read_csv_as_dicts(filename, keyfield, row_modifier):
     """Read a CSV file, producing a dictionary for each row.
 
     The rows are held in a dictionary, with the named column as the
@@ -77,12 +77,16 @@ def read_csv_as_dicts(filename, keyfield='Name', row_modifier=identity):
     column name refers to this modified row rather than the original.
 
     """
+    if row_modifier is None:
+        row_modifier = identity
+    if keyfield is None:
+        keyfield ='Name'
     with io.open(filename, 'r', encoding='utf-8') as instream:
         return {modified_row[keyfield]: modified_row
                 for modified_row in [row_modifier(row)
                                      for row in csv.DictReader(instream)]}
 
-def read_csv_as_lists(filename, keycolumn=0, row_modifier=identity):
+def read_csv_as_lists(filename, keycolumn, row_modifier):
     """Read a CSV file, producing a list for each row.
 
     The rows are held in a dictionary, taking the specified column (0 by
@@ -94,12 +98,16 @@ def read_csv_as_lists(filename, keycolumn=0, row_modifier=identity):
     original.
 
     """
+    if row_modifier is None:
+        row_modifier = identity
+    if keycolumn is None:
+        keycolumn = 0
     with io.open(filename, 'r', encoding='utf-8') as instream:
         return {modified_row[keycolumn]: modified_row
                 for modified_row in [row_modifier(row)
                                      for row in csv.reader(instream)]}
 
-def read_json(filename, _, _):
+def read_json(filename, _k, _m):
     """Read a JSON file."""
     with io.open(filename, 'r', encoding='utf-8') as instream:
         return json.load(instream)
@@ -225,10 +233,10 @@ class simple_data_server():
                     key = reader
                     reader = read_csv_as_lists
                 elif type(reader) == tuple:
-                    if isinstance(reader[0]), types.FunctionType):
+                    if isinstance(reader[0], types.FunctionType):
                         key = reader[1]
                         reader = reader[0]
-                    elif isinstance(reader[1]), types.FunctionType):
+                    elif isinstance(reader[1], types.FunctionType):
                         key = reader[0]
                         row_modifier = reader[1]
                         if isinstance(key, str):
