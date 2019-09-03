@@ -73,6 +73,14 @@ may be:
    dictionary binding the column of each row indexed by that integer,
    to the row as a whole
 
+ * a tuple of a string or an integer (treated as above) and a
+   function, which is applied to each row as it is read, and the
+   return value of which is stored in the resulting dictionary;
+   the indexing string or number refers to the modified row,
+   allowing indexing on a value constructed from the file data in
+   the case of the raw data not having a suitable field for
+   indexing it by
+
 The user function
 -----------------
 
