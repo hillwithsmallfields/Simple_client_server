@@ -27,8 +27,10 @@ and this is my first venture into encryption and decryption, so until
 I get some feedback from people with more experience of these areas,
 it might not be very good example code.
 
-How to use it
-=============
+You can call the main functions of this code from your own program, or use it as a pair of command-line programs in its own right (as explained in the Examples section of this document).
+
+How to use it from your code
+============================
 
 The main entry points are a function to run TCP and UDP servers,
 applying a function you supply and with data files you specify:
@@ -79,8 +81,9 @@ The user-supplied function is called with two arguments:
  * a string containing the query
 
  * a dictionary binding the basenames of the filenames to the results
-   of the readers described above.  It should return the string which
-   is to be sent back to the client.
+   of the readers described above.
+   
+It should return the string which is to be sent back to the client.
 
 Optional encryption
 -------------------
@@ -125,7 +128,7 @@ If you don't already have them, you should install (probably with
   - python-decouple
 
 Examples
---------
+========
 
 A very simple example is provided at the end of the source file, that
 looks things up in a CSV file `/var/local/demo/demo-main.csv`, using
@@ -160,3 +163,4 @@ some future learning projects:
  * Python's logging facilities
  * Digital signature
  
+ I may also add compatible programs in other languages as I learn them (with Haskell and Clojure on my queue, and C and golang on my backlog).
