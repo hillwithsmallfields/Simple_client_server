@@ -112,6 +112,15 @@ def read_json(filename, _k, _m):
     with io.open(filename, 'r', encoding='utf-8') as instream:
         return json.load(instream)
 
+class badReaderDescription(Exception):
+
+    """An exception for when the description of how to read a file is not understood."""
+
+    def __init__(self, filename, reader_description):
+        self.filename = filename
+        self.reader_description = reader_description
+
+
 class simple_data_server():
 
     """A pair of TCP and UDP servers for accessing data from some files.
@@ -252,7 +261,7 @@ class simple_data_server():
                 self.files_data[os.path.basename(filename)] = reader(
                     filename,
                     key,
-                    row_modifier=row_modifier)
+                    row_modifier)
                 self.files_timestamps[filename] = now_timestamp
 
     def get_result(self, data_in,
