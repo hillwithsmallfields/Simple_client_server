@@ -77,14 +77,15 @@ def read_csv_as_dicts(filename, keyfield, row_modifier):
     column name refers to this modified row rather than the original.
 
     """
-    if row_modifier is None:
-        row_modifier = identity
     if keyfield is None:
         keyfield ='Name'
     with io.open(filename, 'r', encoding='utf-8') as instream:
-        return {modified_row[keyfield]: modified_row
-                for modified_row in [row_modifier(row)
-                                     for row in csv.DictReader(instream)]}
+        return ({modified_row[keyfield]: modified_row
+                 for modified_row in [row_modifier(row)
+                                      for row in csv.DictReader(instream)]}
+                if row_modifier is not None
+                else {row[keyfield]: row
+                      for row in csv.DictReader(instream)})
 
 def read_csv_as_lists(filename, keycolumn, row_modifier):
     """Read a CSV file, producing a list for each row.
@@ -98,14 +99,15 @@ def read_csv_as_lists(filename, keycolumn, row_modifier):
     original.
 
     """
-    if row_modifier is None:
-        row_modifier = identity
     if keycolumn is None:
         keycolumn = 0
     with io.open(filename, 'r', encoding='utf-8') as instream:
-        return {modified_row[keycolumn]: modified_row
-                for modified_row in [row_modifier(row)
-                                     for row in csv.reader(instream)]}
+        return ({modified_row[keycolumn]: modified_row
+                 for modified_row in [row_modifier(row)
+                                      for row in csv.reader(instream)]}
+                if row_modifier is not None
+                else {row[keycolumn]: row
+                      for row in csv.reader(instream)})
 
 def read_json(filename, _k, _m):
     """Read a JSON file."""
@@ -119,7 +121,6 @@ class badReaderDescription(Exception):
     def __init__(self, filename, reader_description):
         self.filename = filename
         self.reader_description = reader_description
-
 
 class simple_data_server():
 
@@ -423,6 +424,8 @@ def decrypt(ciphertext, key, encryption_scheme):
 
 def text_serializer(data):
     """Serialize a string as bytes."""
+    if not isinstance(data, str):
+        data = str(data)
     return bytes(data, 'utf-8'), ord('t')
 
 def text_deserializer(data):
