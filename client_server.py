@@ -55,6 +55,7 @@ import socketserver
 import stat
 import sys
 import threading
+import types
 from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
 from Crypto import Random
@@ -62,9 +63,6 @@ from Crypto import Random
 ################################
 # Handling the underlying data #
 ################################
-
-def identity(x):
-    return x
 
 def read_csv_as_dicts(filename, keyfield, row_modifier):
     """Read a CSV file, producing a dictionary for each row.
@@ -121,6 +119,45 @@ class badReaderDescription(Exception):
     def __init__(self, filename, reader_description):
         self.filename = filename
         self.reader_description = reader_description
+
+def preprocess_file_readers(files):
+    """Convert the file reader descriptions into a more convenient form."""
+    reader_functions = {}
+    reader_keys = {}
+    reader_modifiers = {}
+    for filename, reader in files.items():
+        filename = os.path.basename(filename)
+        row_modifier = None
+        if reader is None:
+            reader = read_json
+            key = None
+        elif isinstance(reader, str):
+            key = reader
+            reader = read_csv_as_dicts
+        elif isinstance(reader, int):
+            key = reader
+            reader = read_csv_as_lists
+        elif type(reader) == tuple:
+            if isinstance(reader[0], types.FunctionType):
+                key = reader[1]
+                reader = reader[0]
+            elif isinstance(reader[1], types.FunctionType):
+                key = reader[0]
+                row_modifier = reader[1]
+                if isinstance(key, str):
+                    reader = read_csv_as_dicts
+                elif isinstance(key, int):
+                    reader = read_csv_as_lists
+                else:
+                    raise(badReaderDescription, filename, reader)
+            else:
+                raise(badReaderDescription, filename, reader)
+        else:
+            key = None
+        reader_functions[filename] = reader
+        reader_keys[filename] = key
+        reader_modifiers[filename] = row_modifier
+    return (reader_functions, reader_keys, reader_modifiers)
 
 class simple_data_server():
 
@@ -207,6 +244,9 @@ class simple_data_server():
                                  for filename in files.keys()}
         self.files_data = {os.path.basename(filename): None
                            for filename in files.keys()}
+        (self.file_reader_functions,
+         self.file_reader_keys,
+         self.file_reader_modifiers) = preprocess_file_readers(files)
         self.user_get_result = user_get_result
         # Encryption
         self.query_key = query_key
@@ -231,38 +271,11 @@ class simple_data_server():
         for filename, timestamp in self.files_timestamps.items():
             now_timestamp = os.path.getctime(filename)
             if now_timestamp > timestamp:
-                reader = self.files_readers.get(filename, None)
-                row_modifier = None
-                if reader is None:
-                    reader = read_json
-                    key = None
-                elif isinstance(reader, str):
-                    key = reader
-                    reader = read_csv_as_dicts
-                elif isinstance(reader, int):
-                    key = reader
-                    reader = read_csv_as_lists
-                elif type(reader) == tuple:
-                    if isinstance(reader[0], types.FunctionType):
-                        key = reader[1]
-                        reader = reader[0]
-                    elif isinstance(reader[1], types.FunctionType):
-                        key = reader[0]
-                        row_modifier = reader[1]
-                        if isinstance(key, str):
-                            reader = read_csv_as_dicts
-                        elif isinstance(key, int):
-                            reader = read_csv_as_lists
-                        else:
-                            raise(badReaderDescription, filename, reader)
-                    else:
-                        raise(badReaderDescription, filename, reader)
-                else:
-                    key = None
-                self.files_data[os.path.basename(filename)] = reader(
+                basename = os.path.basename(filename)
+                self.files_data[basename] = self.file_reader_functions[basename](
                     filename,
-                    key,
-                    row_modifier)
+                    self.file_reader_keys[basename],
+                    self.file_reader_modifiers[basename])
                 self.files_timestamps[filename] = now_timestamp
 
     def get_result(self, data_in,
@@ -622,12 +635,17 @@ def get_response(query, host, port, tcp=False,
              + bytes("\n", 'utf-8'))
     if tcp:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            sock.connect((host, int(port)))
-            sock.sendall(query)
-            received = sock.recv(1024)
-        finally:
-            sock.close()
+        more = True
+        received = b""
+        sock.connect((host, int(port)))
+        sock.sendall(query)
+        while more:
+            now_received = sock.recv(1024)
+            if now_received == b"":
+                more = False
+            else:
+                received += now_received
+        sock.close()
     else:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(query, (host, int(port)))
