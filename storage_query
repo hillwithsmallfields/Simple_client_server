@@ -1,2 +1,13 @@
 #!/bin/bash
-./client_server.py --port 9797 --query-key $OPEN_PROJECTS/JCGS_py_server/querykey.pub --reply-key $OPEN_PROJECTS/JCGS_py_server/replykey $*
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+OPEN_PROJECTS=${OPEN_PROJECTS-$HOME/open-projects}
+CLIENT_SERVER_LIBDIR=$OPEN_PROJECTS/Simple_client_server
+if [ ! -d $CLIENT_SERVER_LIBDIR ]
+then
+    echo "Could not find client/server library"
+    echo "Please clone https://github.com/hillwithsmallfields/Simple_client_server.git"
+    echo "and point the environment variable OPEN_PROJECTS at the directory above it."
+    exit 1
+fi
+export PYTHONPATH=$PYTHONPATH:$CLIENT_SERVER_LIBDIR
+$SCRIPT_DIR/py/client_server.py --port 9797 --query-key $OPEN_PROJECTS/JCGS_py_server/querykey.pub --reply-key $OPEN_PROJECTS/JCGS_py_server/replykey $*
