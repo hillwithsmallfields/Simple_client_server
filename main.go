@@ -10,7 +10,7 @@ import (
 	"io/ioutil"
 
 	"crypto/rsa"
-	"crypto/x509"
+	"golang.org/crypto/ssh" // "crypto/x509"
 	"encoding/pem"
 
 	"github.com/joho/godotenv"
@@ -18,29 +18,43 @@ import (
 
 func readPrivateKey(filename, passphrase string) (*rsa.PrivateKey, error) {
 	// todo: use the passphrase
+	fmt.Fprintf(os.Stderr, "readPrivateKey filename=%s passphrase=%s\n", filename, passphrase)
 	fileContents, err := ioutil.ReadFile(filename)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not read key file %s\n", filename)
 		return nil, err
 	}
+	fmt.Fprintf(os.Stderr, "file contents are %s\n", fileContents)
 	block, _ := pem.Decode(fileContents)
 	if block == nil {
 		return nil, errors.New("Failed to parse key block")
 	}
-	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	// key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	key, err := ssh.ParseRawPrivateKey(block.Bytes)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to parse private key from file %s: error %s\n", filename, err)
 		return nil, err
 	}
+	fmt.Fprintf(os.Stderr, "key is %s\n", key)
 	return key, nil
 }
 
 func readKeysFromFiles(queryKeyFile, queryPassphrase, replyKeyFile, replyPassphrase string) (*rsa.PrivateKey, *rsa.PrivateKey, error) {
-	queryKey, qErr := readPrivateKey(queryKeyFile, queryPassphrase)
-	if qErr != nil {
-		return nil, nil, qErr
+	var queryKey *rsa.PrivateKey
+	var qErr error
+	if queryKeyFile != "" {
+		queryKey, qErr = readPrivateKey(queryKeyFile, queryPassphrase)
+		if qErr != nil {
+			return nil, nil, qErr
+		}
 	}
-	replyKey, rErr := readPrivateKey(replyKeyFile, replyPassphrase)
-	if rErr != nil {
-		return nil, nil, rErr
+	var replyKey *rsa.PrivateKey
+	var rErr error
+	if replyKeyFile != "" {
+		replyKey, rErr = readPrivateKey(replyKeyFile, replyPassphrase)
+		if rErr != nil {
+			return nil, nil, rErr
+		}
 	}
 	return queryKey, replyKey, nil
 }
@@ -57,8 +71,8 @@ func main() {
 	hostAddressPtr := flag.String("host", "127.0.0.1", "The server to handle the query.")
 	portPtr := flag.Int("port", 9999, "The port on which to send the query.")
 	useTCPPtr := flag.Bool("tcp", false, "Use a TCP connection the server.")
-	queryKeyFile := flag.String("query-key", "", "The key files for decrypting the queries.")
-	replyKeyFile := flag.String("reply-key", "", "The key file for encrypting the replies.")
+	queryKeyFile := flag.String("query-key", "querykey", "The key files for decrypting the queries.")
+	replyKeyFile := flag.String("reply-key", "replykey", "The key files for encrypting the replies.")
 	verbosePtr := flag.Bool("verbose", false, "Run verbosely")
 	flag.Parse()
 	data := flag.Args()
@@ -71,7 +85,7 @@ func main() {
 		*replyKeyFile,
 		replyPassphrase)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Problem reading key files")
+		fmt.Fprintf(os.Stderr, "Problem reading key files\n")
 	}
 	fmt.Printf("queryPassphrase=%s, replyPassphrase=%s\n", queryPassphrase, replyPassphrase)
 	fmt.Printf("runAsServer=%t hostAddress=%s port=%d useTCP=%t\n", *runAsServerPtr, *hostAddressPtr, *portPtr, *useTCPPtr)
