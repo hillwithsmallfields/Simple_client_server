@@ -1,3 +1,4 @@
+
 A server for applying a user-supplied function to data from clients
 ===================================================================
 
@@ -27,7 +28,18 @@ and this is my first venture into encryption and decryption, so until
 I get some feedback from people with more experience of these areas,
 it might not be very good example code.
 
-You can call the main functions of this code from your own program, or use it as a pair of command-line programs in its own right (as explained in the Examples section of this document).
+You can call the main functions of this code from your own program, or
+use it as a pair of command-line programs in its own right (as
+explained in the Examples section of this document).
+
+Languages note
+==============
+
+I started writing this in Python, and that's the only mature version
+for now.  I'm revising and learning other languages, and starting to
+write versions in them, but that's in occasional moments rather than a
+concentrated effort.  I won't be offended if you pick up on them and
+teach me how to do them in other languages.
 
 How to use it from your code
 ============================
