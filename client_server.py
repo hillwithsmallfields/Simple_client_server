@@ -336,9 +336,8 @@ def get_server():
 # encryption and decryption #
 #############################
 
-# See shorter.py for versions of these two functions with a minimum of
-# intermediate variables; shorter, but not so good for understanding
-# what's going on.
+# See longer.py for versions of these two functions with more
+# intermediate variables, if you find that more readable.
 
 def hybrid_encrypt(plaintext, asymmetric_key):
     """Encrypt the plaintext, using a randomly generated symmetric key.
@@ -348,14 +347,11 @@ def hybrid_encrypt(plaintext, asymmetric_key):
     """
     symmetric_key = Random.new().read(32)
     initialization_vector = Random.new().read(AES.block_size)
-    cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
-    symmetrically_encrypted_payload = (initialization_vector
-                                       + cipher.encrypt(plaintext))
-    asymmetrically_encrypted_symmetric_iv_and_key = (
-        asymmetric_key.publickey().encrypt(
-            initialization_vector + symmetric_key, 32)[0])
-    return (asymmetrically_encrypted_symmetric_iv_and_key
-            + symmetrically_encrypted_payload)
+    return ((asymmetric_key.publickey().encrypt(initialization_vector + symmetric_key, 32)[0]) # asymmetrically encrypted symmetric iv and key
+            + (initialization_vector
+               + (AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
+                  .encrypt(plaintext))) # symmetrically encrypted payload
+            )
 
 def hybrid_decrypt(ciphertext, asymmetric_key):
     """Use the asymmetric key to decrypt a symmetric key.
@@ -363,15 +359,15 @@ def hybrid_decrypt(ciphertext, asymmetric_key):
     The asymmetric key is at the start of the ciphertext.  That key is
     then used to decrypt the rest of the ciphertext.
     """
-    asymmetrically_encrypted_symmetric_iv_and_key = ciphertext[:128]
-    symmetrically_encrypted_payload = ciphertext[128:]
     symmetric_key_and_iv = asymmetric_key.decrypt(
-        asymmetrically_encrypted_symmetric_iv_and_key)[:48]
-    initialization_vector = symmetric_key_and_iv[:AES.block_size]
-    symmetric_key = symmetric_key_and_iv[AES.block_size:]
-    cipher = AES.new(symmetric_key, AES.MODE_CFB, initialization_vector)
-    decrypted_data = cipher.decrypt(symmetrically_encrypted_payload)
-    return decrypted_data[16:]
+        ciphertext[:128]        # asymmetrically encrypted symmetric iv and key
+    )[:48]
+    return AES.new(symmetric_key_and_iv[AES.block_size:], # symmetric_key
+                   AES.MODE_CFB,
+                   symmetric_key_and_iv[:AES.block_size] # initialization vector
+                   ).decrypt(
+                       ciphertext[128:] # symmetrically encrypted payload
+                   )[16:].decode()
 
 def hybrid_encrypt_base64(plaintext, asymmetric_key):
     """As for hybrid_encrypt but the output is base64-encoded."""
